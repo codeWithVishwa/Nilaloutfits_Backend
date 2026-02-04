@@ -33,7 +33,22 @@ const PORT = process.env.PORT || 3000;
 
 app.use(helmet());
 app.use(compression());
-app.use(cors({ origin: process.env.CLIENT_URL || '*', credentials: true }));
+const allowedOrigins = (process.env.CLIENT_URLS || process.env.CLIENT_URL || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.length === 0) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 app.use(morgan('dev'));
@@ -70,7 +85,10 @@ const start = async () => {
   await connectDB();
   const server = http.createServer(app);
   const io = new Server(server, {
-    cors: { origin: process.env.CLIENT_URL || '*', credentials: true },
+    cors: {
+      origin: allowedOrigins.length ? allowedOrigins : '*',
+      credentials: true,
+    },
   });
   initSocket(io);
 

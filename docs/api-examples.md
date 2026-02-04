@@ -1,4 +1,3 @@
-# API Examples
 
 Base URL: `/api`
 
