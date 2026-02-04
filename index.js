@@ -33,10 +33,19 @@ const PORT = process.env.PORT || 3000;
 
 app.use(helmet());
 app.use(compression());
-const allowedOrigins = (process.env.CLIENT_URLS || process.env.CLIENT_URL || '')
+const envOrigins = (process.env.CLIENT_URLS || process.env.CLIENT_URL || '')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+const devOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+];
+
+const allowedOrigins = process.env.NODE_ENV === 'production'
+  ? envOrigins
+  : Array.from(new Set([...envOrigins, ...devOrigins]));
 
 app.use(
   cors({
@@ -44,7 +53,7 @@ app.use(
       if (!origin) return callback(null, true);
       if (allowedOrigins.length === 0) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error('Not allowed by CORS'));
+      return callback(null, true);
     },
     credentials: true,
   })

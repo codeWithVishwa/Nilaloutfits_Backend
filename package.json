@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "nodemon index.js",
     "start": "node index.js",
+    "create:verified-user": "node scripts/create-verified-user.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
