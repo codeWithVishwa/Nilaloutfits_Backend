@@ -32,6 +32,7 @@ const orderSchema = new mongoose.Schema(
     address: addressSchema,
     status: { type: String, enum: ORDER_STATUS, default: 'Created' },
     paymentStatus: { type: String, enum: PAYMENT_STATUS, default: 'Pending' },
+    paymentMethod: { type: String, enum: ['COD', 'Razorpay'], default: 'Razorpay' },
     subtotal: { type: Number, required: true, min: 0 },
     shippingFee: { type: Number, default: 0 },
     tax: { type: Number, default: 0 },

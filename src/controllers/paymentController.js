@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import razorpay from '../config/razorpay.js';
 import Order from '../models/Order.js';
 import Payment from '../models/Payment.js';
+import { sendOrderInvoiceEmail } from '../utils/invoiceEmail.js';
 
 export const createRazorpayOrder = async (req, res) => {
   try {
@@ -66,6 +67,7 @@ export const verifyPaymentSignature = async (req, res) => {
         paymentStatus: 'Paid',
         status: 'Paid',
       });
+      sendOrderInvoiceEmail(payment.orderId);
     }
 
     res.status(200).json({ message: 'Payment verified' });

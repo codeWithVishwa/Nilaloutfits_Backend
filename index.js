@@ -61,10 +61,11 @@ app.use(
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 app.use(morgan('dev'));
+app.use('/uploads', express.static('uploads'));
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 300,
+  windowMs: 15 * 60 * 10000,
+  max: 3000,
 });
 app.use(limiter);
 

@@ -5,6 +5,7 @@ import {
   refreshAccessToken,
   logout,
   me,
+  updateMe,
   forgotPassword,
   resetPassword,
   verifyEmail,
@@ -20,6 +21,7 @@ router.post('/login', login);
 router.post('/refresh', refreshAccessToken);
 router.post('/logout', logout);
 router.get('/me', protect, me);
+router.put('/me', protect, updateMe);
 router.post('/forgot-password', forgotPassword);
 router.post('/reset-password', resetPassword);
 router.post('/verify-email', verifyEmail);

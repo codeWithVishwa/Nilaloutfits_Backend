@@ -1,22 +1,27 @@
 import Product from '../models/Product.js';
 import Variant from '../models/Variant.js';
+import Order from '../models/Order.js';
 import { slugify } from '../utils/slug.js';
 import { getPagination } from '../utils/pagination.js';
 
 export const createProduct = async (req, res) => {
   try {
-    const { title, description, categoryId, subcategoryId, brand, images, tags, status } = req.body;
-    if (!title || !categoryId) {
-      return res.status(400).json({ message: 'Title and categoryId are required' });
+    const { title, description, categoryId, subcategoryId, brand, images, tags, status, price, stock } = req.body;
+    if (!title || !categoryId || price === undefined || stock === undefined) {
+      return res.status(400).json({ message: 'Title, categoryId, price, and stock are required' });
     }
+
+    const cleanSubcategoryId = subcategoryId ? subcategoryId : undefined;
 
     const product = await Product.create({
       title,
       slug: slugify(title),
       description,
       categoryId,
-      subcategoryId,
+      subcategoryId: cleanSubcategoryId,
       brand,
+      price,
+      stock,
       images,
       tags,
       status,
@@ -24,14 +29,20 @@ export const createProduct = async (req, res) => {
 
     res.status(201).json(product);
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    if (error?.code === 11000) {
+      return res.status(409).json({ message: 'Product with same title already exists' });
+    }
+    if (error?.name === 'ValidationError') {
+      return res.status(400).json({ message: error.message });
+    }
+    res.status(500).json({ message: error?.message || 'Server error' });
   }
 };
 
 export const listProducts = async (req, res) => {
   try {
     const { limit, skip } = getPagination(req.query);
-    const { q, categoryId, subcategoryId, size, priceMin, priceMax, availability } = req.query;
+    const { q, categoryId, subcategoryId, size, priceMin, priceMax, availability, sort } = req.query;
 
     const filter = {};
     if (categoryId) filter.categoryId = categoryId;
@@ -54,12 +65,86 @@ export const listProducts = async (req, res) => {
       filter._id = { $in: productIdsFromVariants };
     }
 
-    const products = await Product.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const pageSize = limit || 12;
+    const pageSkip = skip || 0;
 
-    res.status(200).json(products);
+    if (sort === 'best-selling') {
+      const curated = await Product.find({
+        ...filter,
+        featuredBestSelling: true,
+      })
+        .sort({ updatedAt: -1 })
+        .skip(pageSkip)
+        .limit(pageSize);
+
+      if (curated.length > 0) {
+        return res.status(200).json(curated);
+      }
+
+      const maxToFetch = Math.max(pageSize + pageSkip, pageSize) * 5;
+
+      const topSelling = await Order.aggregate([
+        { $match: { paymentStatus: 'Paid' } },
+        { $unwind: '$items' },
+        {
+          $group: {
+            _id: '$items.productId',
+            sold: { $sum: '$items.quantity' },
+          },
+        },
+        { $sort: { sold: -1 } },
+        { $limit: maxToFetch },
+      ]);
+
+      const rankedIds = topSelling.map((item) => item._id);
+      if (rankedIds.length === 0) {
+        const fallback = await Product.find(filter)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit);
+        return res.status(200).json(fallback);
+      }
+
+      const products = await Product.find({
+        ...filter,
+        _id: { $in: rankedIds },
+      });
+
+      const rankedProducts = rankedIds
+        .map((id) => products.find((product) => product._id.toString() === id.toString()))
+        .filter(Boolean);
+
+      const pagedProducts = rankedProducts.slice(pageSkip, pageSkip + pageSize);
+      return res.status(200).json(pagedProducts);
+    }
+
+    if (sort === 'recent' || sort === 'new') {
+      const curated = await Product.find({
+        ...filter,
+        featuredRecent: true,
+      })
+        .sort({ updatedAt: -1 })
+        .skip(pageSkip)
+        .limit(pageSize);
+
+      if (curated.length > 0) {
+        return res.status(200).json(curated);
+      }
+    }
+
+    const sortBy = (() => {
+      if (sort === 'price:asc') return { price: 1 };
+      if (sort === 'price:desc') return { price: -1 };
+      if (sort === 'recent' || sort === 'new') return { createdAt: -1 };
+      return { createdAt: -1 };
+    })();
+
+    const products = await Product.find(filter)
+      .sort(sortBy)
+      .skip(pageSkip)
+      .limit(pageSize);
+
+    return res.status(200).json(products);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
   }
