@@ -6,6 +6,7 @@ import { PERMISSIONS } from '../config/roles.js';
 
 const router = express.Router();
 
+router.post('/', protect, authorize(PERMISSIONS.CATALOG_WRITE), upload.single('file'), uploadMedia);
 router.post('/upload', protect, authorize(PERMISSIONS.CATALOG_WRITE), upload.single('file'), uploadMedia);
 
 export default router;

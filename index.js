@@ -25,6 +25,7 @@ import reviewRoutes from './src/routes/reviewRoutes.js';
 import blogRoutes from './src/routes/blogRoutes.js';
 import adminRoutes from './src/routes/adminRoutes.js';
 import mediaRoutes from './src/routes/mediaRoutes.js';
+import contactRoutes from './src/routes/contactRoutes.js';
 
 dotenv.config();
 
@@ -90,6 +91,8 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/blogs', blogRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/media', mediaRoutes);
+app.use('/upload', mediaRoutes);
+app.use('/api/contact', contactRoutes);
 
 const start = async () => {
   await connectDB();
