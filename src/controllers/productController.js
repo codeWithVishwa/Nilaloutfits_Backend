@@ -4,6 +4,25 @@ import Order from '../models/Order.js';
 import { slugify } from '../utils/slug.js';
 import { getPagination } from '../utils/pagination.js';
 
+const generateUniqueSlug = async (title, excludeId) => {
+  const base = slugify(title);
+  let candidate = base;
+  let suffix = 2;
+
+  // Ensure slug uniqueness even when multiple products share the same title.
+  while (
+    await Product.exists({
+      slug: candidate,
+      ...(excludeId ? { _id: { $ne: excludeId } } : {}),
+    })
+  ) {
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+
+  return candidate;
+};
+
 export const createProduct = async (req, res) => {
   try {
     const { title, description, categoryId, subcategoryId, brand, images, tags, status, price, stock } = req.body;
@@ -15,7 +34,7 @@ export const createProduct = async (req, res) => {
 
     const product = await Product.create({
       title,
-      slug: slugify(title),
+      slug: await generateUniqueSlug(title),
       description,
       categoryId,
       subcategoryId: cleanSubcategoryId,
@@ -166,7 +185,7 @@ export const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
-    if (updates.title) updates.slug = slugify(updates.title);
+    if (updates.title) updates.slug = await generateUniqueSlug(updates.title, id);
 
     const product = await Product.findByIdAndUpdate(id, updates, { new: true });
     if (!product) return res.status(404).json({ message: 'Product not found' });

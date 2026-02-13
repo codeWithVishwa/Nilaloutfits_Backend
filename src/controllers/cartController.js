@@ -20,21 +20,48 @@ export const getCart = async (req, res) => {
 export const addToCart = async (req, res) => {
   try {
     const { productId, variantId, quantity } = req.body;
-    if (!productId || !variantId || !quantity) {
-      return res.status(400).json({ message: 'productId, variantId, quantity are required' });
+    if (!productId || !quantity) {
+      return res.status(400).json({ message: 'productId and quantity are required' });
     }
 
-    const variant = await Variant.findById(variantId);
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({ message: 'Invalid productId' });
+    }
+
+    let resolvedVariantId = variantId;
+    if (!resolvedVariantId) {
+      const defaultVariant = await Variant.findOne({
+        productId,
+        availability: 'InStock',
+        stock: { $gt: 0 },
+      }).sort({ stock: -1, price: 1, size: 1 });
+
+      if (!defaultVariant) {
+        return res.status(400).json({ message: 'No in-stock variant available for this product' });
+      }
+
+      resolvedVariantId = defaultVariant._id;
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(resolvedVariantId)) {
+      return res.status(400).json({ message: 'Invalid variantId' });
+    }
+
+    const variant = await Variant.findById(resolvedVariantId);
+    if (!variant || variant.productId.toString() !== productId.toString()) {
+      return res.status(400).json({ message: 'Variant does not belong to this product' });
+    }
+
     if (!variant || variant.stock < quantity) {
       return res.status(400).json({ message: 'Insufficient stock' });
     }
 
-    const existing = await Cart.findOne({ userId: req.user._id, 'items.variantId': variantId });
+    const existing = await Cart.findOne({ userId: req.user._id, 'items.variantId': resolvedVariantId });
 
     let cart;
     if (existing) {
       await Cart.findOneAndUpdate(
-        { userId: req.user._id, 'items.variantId': variantId },
+        { userId: req.user._id, 'items.variantId': resolvedVariantId },
         { $inc: { 'items.$.quantity': quantity }, $set: { 'items.$.priceSnapshot': variant.price } },
         { new: true }
       );
@@ -45,7 +72,7 @@ export const addToCart = async (req, res) => {
           $push: {
             items: {
               productId,
-              variantId,
+              variantId: resolvedVariantId,
               quantity,
               priceSnapshot: variant.price,
             },
