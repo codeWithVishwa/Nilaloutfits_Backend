@@ -1,4 +1,5 @@
 import Variant from '../models/Variant.js';
+import Product from '../models/Product.js';
 import { emitStockUpdate } from '../socket/index.js';
 
 export const createVariant = async (req, res) => {
@@ -8,19 +9,41 @@ export const createVariant = async (req, res) => {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    const availability = stock > 0 ? 'InStock' : 'OutOfStock';
-    const variant = await Variant.create({
-      productId,
-      size,
-      color,
-      sku,
-      price,
-      stock,
-      availability,
-    });
+    const sourceProduct = await Product.findById(productId).select('title');
+    if (!sourceProduct) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
 
-    emitStockUpdate(variant);
-    res.status(201).json(variant);
+    const targetProducts = await Product.find({ title: sourceProduct.title }).select('_id');
+    const availability = stock > 0 ? 'InStock' : 'OutOfStock';
+
+    const created = [];
+    const skipped = [];
+
+    for (const product of targetProducts) {
+      const uniqueSku = `${sku}-${product._id}`.toUpperCase();
+      try {
+        const variant = await Variant.create({
+          productId: product._id,
+          size,
+          color,
+          sku: uniqueSku,
+          price,
+          stock,
+          availability,
+        });
+        created.push(variant);
+        emitStockUpdate(variant);
+      } catch (error) {
+        if (error?.code === 11000) {
+          skipped.push({ productId: product._id, reason: 'Duplicate variant or SKU' });
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    res.status(201).json({ created, skipped, appliedTo: targetProducts.length });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
   }
