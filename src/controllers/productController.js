@@ -25,7 +25,7 @@ const generateUniqueSlug = async (title, excludeId) => {
 
 export const createProduct = async (req, res) => {
   try {
-    const { title, description, categoryId, subcategoryId, brand, images, tags, status, price, stock } = req.body;
+    const { title, description, categoryId, subcategoryId, brand, images, colorVariants, tags, status, price, stock } = req.body;
     if (!title || !categoryId || price === undefined || stock === undefined) {
       return res.status(400).json({ message: 'Title, categoryId, price, and stock are required' });
     }
@@ -42,6 +42,7 @@ export const createProduct = async (req, res) => {
       price,
       stock,
       images,
+      colorVariants,
       tags,
       status,
     });

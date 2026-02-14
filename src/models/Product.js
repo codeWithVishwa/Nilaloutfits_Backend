@@ -11,6 +11,12 @@ const productSchema = new mongoose.Schema(
     price: { type: Number, required: true, min: 0 },
     stock: { type: Number, required: true, min: 0 },
     images: [{ type: String }],
+    colorVariants: [
+      {
+        name: { type: String, trim: true },
+        images: [{ type: String }],
+      },
+    ],
     tags: [{ type: String, lowercase: true, trim: true }],
     status: { type: String, enum: ['Active', 'Inactive'], default: 'Active' },
     featuredBestSelling: { type: Boolean, default: false },
