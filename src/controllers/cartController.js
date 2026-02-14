@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import Cart from '../models/Cart.js';
+import Product from '../models/Product.js';
 import Variant from '../models/Variant.js';
 
 const getPopulatedCart = async (userId) => {
@@ -36,11 +37,44 @@ export const addToCart = async (req, res) => {
         stock: { $gt: 0 },
       }).sort({ stock: -1, price: 1, size: 1 });
 
-      if (!defaultVariant) {
-        return res.status(400).json({ message: 'No in-stock variant available for this product' });
-      }
+      if (defaultVariant) {
+        resolvedVariantId = defaultVariant._id;
+      } else {
+        const variantCount = await Variant.countDocuments({ productId });
+        if (variantCount > 0) {
+          return res.status(400).json({ message: 'No in-stock variant available for this product' });
+        }
 
-      resolvedVariantId = defaultVariant._id;
+        const product = await Product.findById(productId).select('price stock');
+        if (!product) {
+          return res.status(404).json({ message: 'Product not found' });
+        }
+        if (product.stock <= 0) {
+          return res.status(400).json({ message: 'No in-stock variant available for this product' });
+        }
+
+        try {
+          const createdVariant = await Variant.create({
+            productId,
+            size: 'ONE_SIZE',
+            sku: `AUTO-${productId}`.toUpperCase(),
+            price: product.price,
+            stock: product.stock,
+            availability: 'InStock',
+          });
+          resolvedVariantId = createdVariant._id;
+        } catch (error) {
+          if (error?.code === 11000) {
+            const existingVariant = await Variant.findOne({ productId, size: 'ONE_SIZE' });
+            if (!existingVariant) {
+              return res.status(500).json({ message: 'Server error' });
+            }
+            resolvedVariantId = existingVariant._id;
+          } else {
+            throw error;
+          }
+        }
+      }
     }
 
     if (!mongoose.Types.ObjectId.isValid(resolvedVariantId)) {
