@@ -25,7 +25,22 @@ const generateUniqueSlug = async (title, excludeId) => {
 
 export const createProduct = async (req, res) => {
   try {
-    const { title, description, categoryId, subcategoryId, brand, images, colorVariants, tags, status, price, stock } = req.body;
+    const {
+      title,
+      description,
+      categoryId,
+      subcategoryId,
+      brand,
+      images,
+      colorVariants,
+      tags,
+      status,
+      price,
+      stock,
+      featuredBestSelling,
+      featuredRecent,
+      featuredVariantIds,
+    } = req.body;
     if (!title || !categoryId || price === undefined || stock === undefined) {
       return res.status(400).json({ message: 'Title, categoryId, price, and stock are required' });
     }
@@ -45,6 +60,9 @@ export const createProduct = async (req, res) => {
       colorVariants,
       tags,
       status,
+      featuredBestSelling: Boolean(featuredBestSelling),
+      featuredRecent: Boolean(featuredRecent),
+      featuredVariantIds: Array.isArray(featuredVariantIds) ? featuredVariantIds : [],
     });
 
     res.status(201).json(product);
@@ -187,6 +205,15 @@ export const updateProduct = async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
     if (updates.title) updates.slug = await generateUniqueSlug(updates.title, id);
+    if (updates.featuredBestSelling !== undefined) {
+      updates.featuredBestSelling = Boolean(updates.featuredBestSelling);
+    }
+    if (updates.featuredRecent !== undefined) {
+      updates.featuredRecent = Boolean(updates.featuredRecent);
+    }
+    if (updates.featuredVariantIds !== undefined) {
+      updates.featuredVariantIds = Array.isArray(updates.featuredVariantIds) ? updates.featuredVariantIds : [];
+    }
 
     const product = await Product.findByIdAndUpdate(id, updates, { new: true });
     if (!product) return res.status(404).json({ message: 'Product not found' });

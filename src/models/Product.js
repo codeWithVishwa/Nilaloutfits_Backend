@@ -21,6 +21,7 @@ const productSchema = new mongoose.Schema(
     status: { type: String, enum: ['Active', 'Inactive'], default: 'Active' },
     featuredBestSelling: { type: Boolean, default: false },
     featuredRecent: { type: Boolean, default: false },
+    featuredVariantIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Variant' }],
     avgRating: { type: Number, default: 0 },
     ratingCount: { type: Number, default: 0 },
   },

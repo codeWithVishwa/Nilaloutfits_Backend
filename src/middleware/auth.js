@@ -12,14 +12,16 @@ export const protect = async (req, res, next) => {
     const token = tokenFromHeader;
 
     if (!token) {
-      return res.status(401).json({ message: 'Not authorized' });
+      console.log('No token provided');
+      return res.status(401).json({ message: 'Not authorized - No token provided' });
     }
 
     const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
     const user = await User.findById(decoded.id).select('-password');
 
     if (!user) {
-      return res.status(401).json({ message: 'Not authorized' });
+      console.log('User not found for token:', decoded.id);
+      return res.status(401).json({ message: 'Not authorized - User not found' });
     }
 
     const basePermissions = ROLE_PERMISSIONS[user.role] || [];
@@ -28,13 +30,21 @@ export const protect = async (req, res, next) => {
     req.userPermissions = new Set([...basePermissions, ...extraPermissions]);
     next();
   } catch (error) {
+    console.error('Auth middleware error:', error.message);
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ message: 'Not authorized - Invalid token' });
+    }
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Not authorized - Token expired' });
+    }
     return res.status(401).json({ message: 'Not authorized' });
   }
 };
 
 export const authorize = (permission) => (req, res, next) => {
   if (!req.userPermissions || !req.userPermissions.has(permission)) {
-    return res.status(403).json({ message: 'Forbidden' });
+    console.log('Permission denied:', permission, 'User permissions:', Array.from(req.userPermissions || []));
+    return res.status(403).json({ message: `Forbidden - Missing permission: ${permission}` });
   }
   next();
 };
