@@ -116,7 +116,13 @@ export const listProducts = async (req, res) => {
         .limit(pageSize);
 
       if (curated.length > 0) {
-        return res.status(200).json(curated);
+        const total = await Product.countDocuments({ ...filter, featuredBestSelling: true });
+        return res.status(200).json({ 
+          data: curated, 
+          total,
+          page: Math.floor(pageSkip / pageSize) + 1,
+          limit: pageSize
+        });
       }
 
       const maxToFetch = Math.max(pageSize + pageSkip, pageSize) * 5;
@@ -140,7 +146,13 @@ export const listProducts = async (req, res) => {
           .sort({ createdAt: -1 })
           .skip(skip)
           .limit(limit);
-        return res.status(200).json(fallback);
+        const total = await Product.countDocuments(filter);
+        return res.status(200).json({ 
+          data: fallback, 
+          total,
+          page: Math.floor(pageSkip / pageSize) + 1,
+          limit: pageSize
+        });
       }
 
       const products = await Product.find({
@@ -153,7 +165,12 @@ export const listProducts = async (req, res) => {
         .filter(Boolean);
 
       const pagedProducts = rankedProducts.slice(pageSkip, pageSkip + pageSize);
-      return res.status(200).json(pagedProducts);
+      return res.status(200).json({ 
+        data: pagedProducts, 
+        total: rankedProducts.length,
+        page: Math.floor(pageSkip / pageSize) + 1,
+        limit: pageSize
+      });
     }
 
     if (sort === 'recent' || sort === 'new') {
@@ -166,7 +183,13 @@ export const listProducts = async (req, res) => {
         .limit(pageSize);
 
       if (curated.length > 0) {
-        return res.status(200).json(curated);
+        const total = await Product.countDocuments({ ...filter, featuredRecent: true });
+        return res.status(200).json({ 
+          data: curated, 
+          total,
+          page: Math.floor(pageSkip / pageSize) + 1,
+          limit: pageSize
+        });
       }
     }
 
@@ -177,13 +200,22 @@ export const listProducts = async (req, res) => {
       return { createdAt: -1 };
     })();
 
-    const products = await Product.find(filter)
-      .sort(sortBy)
-      .skip(pageSkip)
-      .limit(pageSize);
+    const [products, total] = await Promise.all([
+      Product.find(filter)
+        .sort(sortBy)
+        .skip(pageSkip)
+        .limit(pageSize),
+      Product.countDocuments(filter)
+    ]);
 
-    return res.status(200).json(products);
+    return res.status(200).json({ 
+      data: products, 
+      total,
+      page: Math.floor(pageSkip / pageSize) + 1,
+      limit: pageSize
+    });
   } catch (error) {
+    console.error('List products error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
