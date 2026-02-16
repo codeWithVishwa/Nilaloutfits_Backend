@@ -121,7 +121,12 @@ export const listOrders = async (req, res) => {
 
 export const listAllOrders = async (req, res) => {
   try {
-    const orders = await Order.find()
+    const orders = await Order.find({
+      $or: [
+        { paymentMethod: 'COD' },
+        { paymentStatus: 'Paid' },
+      ],
+    })
       .populate('userId', 'name email phone address')
       .populate('items.productId', 'title images brand')
       .populate('items.variantId', 'size color sku price')

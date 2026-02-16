@@ -2,7 +2,25 @@ import crypto from 'crypto';
 import razorpay from '../config/razorpay.js';
 import Order from '../models/Order.js';
 import Payment from '../models/Payment.js';
+import Variant from '../models/Variant.js';
 import { sendOrderInvoiceEmail } from '../utils/invoiceEmail.js';
+import { emitStockUpdate } from '../socket/index.js';
+
+const restoreOrderStock = async (order) => {
+  if (!order?.items?.length) return;
+
+  const variantIds = order.items.map((item) => item.variantId);
+  const variants = await Variant.find({ _id: { $in: variantIds } });
+
+  for (const item of order.items) {
+    const variant = variants.find((v) => v._id.toString() === item.variantId.toString());
+    if (!variant) continue;
+    variant.stock += item.quantity;
+    variant.availability = variant.stock > 0 ? 'InStock' : 'OutOfStock';
+    await variant.save();
+    emitStockUpdate(variant);
+  }
+};
 
 export const createRazorpayOrder = async (req, res) => {
   try {
@@ -89,12 +107,52 @@ export const razorpayWebhook = async (req, res) => {
         );
         const payment = await Payment.findOne({ razorpayOrderId: paymentEntity.order_id });
         if (payment) {
-          await Order.findByIdAndUpdate(payment.orderId, { paymentStatus: 'Failed' });
+          const order = await Order.findById(payment.orderId);
+          if (order && order.paymentStatus !== 'Failed' && order.status !== 'Cancelled') {
+            await restoreOrderStock(order);
+            await Order.findByIdAndUpdate(order._id, { paymentStatus: 'Failed', status: 'Cancelled' });
+          }
         }
       }
     }
 
     res.status(200).json({ received: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const markPaymentFailed = async (req, res) => {
+  try {
+    const { orderId, razorpayOrderId, reason } = req.body;
+    if (!orderId && !razorpayOrderId) {
+      return res.status(400).json({ message: 'orderId or razorpayOrderId is required' });
+    }
+
+    const payment = orderId
+      ? await Payment.findOneAndUpdate(
+        { orderId },
+        { status: 'Failed', rawPayload: { reason } },
+        { new: true }
+      )
+      : await Payment.findOneAndUpdate(
+        { razorpayOrderId },
+        { status: 'Failed', rawPayload: { reason } },
+        { new: true }
+      );
+
+    const order = orderId
+      ? await Order.findById(orderId)
+      : payment?.orderId
+        ? await Order.findById(payment.orderId)
+        : null;
+
+    if (order && order.paymentStatus !== 'Failed' && order.status !== 'Cancelled') {
+      await restoreOrderStock(order);
+      await Order.findByIdAndUpdate(order._id, { paymentStatus: 'Failed', status: 'Cancelled' });
+    }
+
+    res.status(200).json({ message: 'Payment marked as failed' });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
   }
