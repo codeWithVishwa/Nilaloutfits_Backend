@@ -79,54 +79,112 @@ export const createProduct = async (req, res) => {
 
 export const listProducts = async (req, res) => {
   try {
+    // Extract and sanitize query parameters
     const { limit, skip } = getPagination(req.query);
-    const { q, categoryId, subcategoryId, size, priceMin, priceMax, availability, sort } = req.query;
+    const { 
+      q, 
+      categoryId, 
+      subcategoryId, 
+      size, 
+      priceMin, 
+      priceMax, 
+      availability, 
+      sort,
+      status 
+    } = req.query;
 
-    const filter = {};
-    if (categoryId) filter.categoryId = categoryId;
-    if (subcategoryId) filter.subcategoryId = subcategoryId;
-    if (q) filter.$text = { $search: q };
+    // Build base filter - ALWAYS filter by Active status unless explicitly overridden
+    const filter = {
+      status: status || 'Active'
+    };
 
-    let productIdsFromVariants = null;
+    // Add category filter only if provided and not empty
+    if (categoryId && categoryId.trim()) {
+      filter.categoryId = categoryId.trim();
+    }
+
+    // Add subcategory filter only if provided and not empty
+    if (subcategoryId && subcategoryId.trim()) {
+      filter.subcategoryId = subcategoryId.trim();
+    }
+
+    // Add text search only if provided and not empty
+    if (q && q.trim()) {
+      filter.$text = { $search: q.trim() };
+    }
+
+    // Handle variant-based filtering (size, price range, availability)
     if (size || priceMin || priceMax || availability) {
       const variantFilter = {};
-      if (size) variantFilter.size = size;
-      if (availability) variantFilter.availability = availability;
+      
+      if (size && size.trim()) {
+        variantFilter.size = size.trim();
+      }
+      
+      if (availability && availability.trim()) {
+        variantFilter.availability = availability.trim();
+      }
+      
       if (priceMin || priceMax) {
         variantFilter.price = {};
-        if (priceMin) variantFilter.price.$gte = Number(priceMin);
-        if (priceMax) variantFilter.price.$lte = Number(priceMax);
+        if (priceMin && !isNaN(priceMin)) {
+          variantFilter.price.$gte = Number(priceMin);
+        }
+        if (priceMax && !isNaN(priceMax)) {
+          variantFilter.price.$lte = Number(priceMax);
+        }
       }
 
-      const variants = await Variant.find(variantFilter).select('productId');
-      productIdsFromVariants = variants.map((v) => v.productId);
-      filter._id = { $in: productIdsFromVariants };
+      // Only query variants if we have actual filters
+      if (Object.keys(variantFilter).length > 0) {
+        const variants = await Variant.find(variantFilter).select('productId').lean();
+        const productIds = [...new Set(variants.map((v) => v.productId))];
+        
+        if (productIds.length === 0) {
+          // No variants match - return empty result
+          return res.status(200).json({ 
+            data: [], 
+            total: 0,
+            totalPages: 0,
+            currentPage: 1,
+            limit: limit || 12
+          });
+        }
+        
+        filter._id = { $in: productIds };
+      }
     }
 
     const pageSize = limit || 12;
     const pageSkip = skip || 0;
+    const currentPage = Math.floor(pageSkip / pageSize) + 1;
 
+    // Handle best-selling sort
     if (sort === 'best-selling') {
-      const curated = await Product.find({
-        ...filter,
-        featuredBestSelling: true,
-      })
-        .sort({ updatedAt: -1 })
-        .skip(pageSkip)
-        .limit(pageSize);
+      // Try featured best-selling products first
+      const featuredFilter = { ...filter, featuredBestSelling: true };
+      const featuredCount = await Product.countDocuments(featuredFilter);
+      
+      if (featuredCount > 0) {
+        const [curated, total] = await Promise.all([
+          Product.find(featuredFilter)
+            .sort({ updatedAt: -1 })
+            .skip(pageSkip)
+            .limit(pageSize)
+            .lean(),
+          Product.countDocuments(featuredFilter)
+        ]);
 
-      if (curated.length > 0) {
-        const total = await Product.countDocuments({ ...filter, featuredBestSelling: true });
         return res.status(200).json({ 
           data: curated, 
           total,
-          page: Math.floor(pageSkip / pageSize) + 1,
+          totalPages: Math.ceil(total / pageSize),
+          currentPage,
           limit: pageSize
         });
       }
 
-      const maxToFetch = Math.max(pageSize + pageSkip, pageSize) * 5;
-
+      // Fallback to actual sales data
       const topSelling = await Order.aggregate([
         { $match: { paymentStatus: 'Paid' } },
         { $unwind: '$items' },
@@ -137,86 +195,114 @@ export const listProducts = async (req, res) => {
           },
         },
         { $sort: { sold: -1 } },
-        { $limit: maxToFetch },
+        { $limit: 500 }, // Reasonable limit for performance
       ]);
 
       const rankedIds = topSelling.map((item) => item._id);
+      
       if (rankedIds.length === 0) {
-        const fallback = await Product.find(filter)
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(limit);
-        const total = await Product.countDocuments(filter);
+        // No sales data - fallback to recent products
+        const [products, total] = await Promise.all([
+          Product.find(filter)
+            .sort({ createdAt: -1 })
+            .skip(pageSkip)
+            .limit(pageSize)
+            .lean(),
+          Product.countDocuments(filter)
+        ]);
+
         return res.status(200).json({ 
-          data: fallback, 
+          data: products, 
           total,
-          page: Math.floor(pageSkip / pageSize) + 1,
+          totalPages: Math.ceil(total / pageSize),
+          currentPage,
           limit: pageSize
         });
       }
 
+      // Fetch products matching the ranked IDs
       const products = await Product.find({
         ...filter,
         _id: { $in: rankedIds },
-      });
+      }).lean();
 
+      // Sort products by sales rank
       const rankedProducts = rankedIds
-        .map((id) => products.find((product) => product._id.toString() === id.toString()))
+        .map((id) => products.find((p) => p._id.toString() === id.toString()))
         .filter(Boolean);
 
+      // Apply pagination to ranked results
       const pagedProducts = rankedProducts.slice(pageSkip, pageSkip + pageSize);
+      const total = rankedProducts.length;
+
       return res.status(200).json({ 
         data: pagedProducts, 
-        total: rankedProducts.length,
-        page: Math.floor(pageSkip / pageSize) + 1,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+        currentPage,
         limit: pageSize
       });
     }
 
+    // Handle recent/new sort
     if (sort === 'recent' || sort === 'new') {
-      const curated = await Product.find({
-        ...filter,
-        featuredRecent: true,
-      })
-        .sort({ updatedAt: -1 })
-        .skip(pageSkip)
-        .limit(pageSize);
+      // Try featured recent products first
+      const featuredFilter = { ...filter, featuredRecent: true };
+      const featuredCount = await Product.countDocuments(featuredFilter);
+      
+      if (featuredCount > 0) {
+        const [curated, total] = await Promise.all([
+          Product.find(featuredFilter)
+            .sort({ updatedAt: -1 })
+            .skip(pageSkip)
+            .limit(pageSize)
+            .lean(),
+          Product.countDocuments(featuredFilter)
+        ]);
 
-      if (curated.length > 0) {
-        const total = await Product.countDocuments({ ...filter, featuredRecent: true });
         return res.status(200).json({ 
           data: curated, 
           total,
-          page: Math.floor(pageSkip / pageSize) + 1,
+          totalPages: Math.ceil(total / pageSize),
+          currentPage,
           limit: pageSize
         });
       }
     }
 
+    // Determine sort order
     const sortBy = (() => {
       if (sort === 'price:asc') return { price: 1 };
       if (sort === 'price:desc') return { price: -1 };
       if (sort === 'recent' || sort === 'new') return { createdAt: -1 };
-      return { createdAt: -1 };
+      return { createdAt: -1 }; // Default sort
     })();
 
+    // Execute query with pagination
     const [products, total] = await Promise.all([
       Product.find(filter)
         .sort(sortBy)
         .skip(pageSkip)
-        .limit(pageSize),
+        .limit(pageSize)
+        .lean(),
       Product.countDocuments(filter)
     ]);
+
+    const totalPages = Math.ceil(total / pageSize);
 
     return res.status(200).json({ 
       data: products, 
       total,
-      page: Math.floor(pageSkip / pageSize) + 1,
+      totalPages,
+      currentPage,
       limit: pageSize
     });
   } catch (error) {
     console.error('List products error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ 
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
@@ -277,14 +363,18 @@ export const recommendProducts = async (req, res) => {
 
     const recommendations = await Product.find({
       _id: { $ne: productId },
+      status: 'Active', // Only recommend active products
       $or: [
         { categoryId: product.categoryId },
         { tags: { $in: product.tags || [] } },
       ],
-    }).limit(12);
+    })
+    .limit(12)
+    .lean();
 
     res.status(200).json(recommendations);
   } catch (error) {
+    console.error('Recommend products error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
