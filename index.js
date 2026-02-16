@@ -74,7 +74,7 @@ const limiter = rateLimit({
 app.use(limiter);
 
 app.get('/health', (req, res) => {
-  res.send('OK');
+  res.send('OK LIVE');
 });
 
 app.get('/', (req, res) => {
