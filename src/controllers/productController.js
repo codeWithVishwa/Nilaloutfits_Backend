@@ -144,7 +144,7 @@ export const listProducts = async (req, res) => {
           // No variants match - return empty result
           return res.status(200).json({ 
             data: [], 
-            total: 0,
+            totalItems: 0,
             totalPages: 0,
             currentPage: 1,
             limit: limit || 12
@@ -177,7 +177,7 @@ export const listProducts = async (req, res) => {
 
         return res.status(200).json({ 
           data: curated, 
-          total,
+          totalItems: total,
           totalPages: Math.ceil(total / pageSize),
           currentPage,
           limit: pageSize
@@ -213,7 +213,7 @@ export const listProducts = async (req, res) => {
 
         return res.status(200).json({ 
           data: products, 
-          total,
+          totalItems: total,
           totalPages: Math.ceil(total / pageSize),
           currentPage,
           limit: pageSize
@@ -237,7 +237,7 @@ export const listProducts = async (req, res) => {
 
       return res.status(200).json({ 
         data: pagedProducts, 
-        total,
+        totalItems: total,
         totalPages: Math.ceil(total / pageSize),
         currentPage,
         limit: pageSize
@@ -262,7 +262,7 @@ export const listProducts = async (req, res) => {
 
         return res.status(200).json({ 
           data: curated, 
-          total,
+          totalItems: total,
           totalPages: Math.ceil(total / pageSize),
           currentPage,
           limit: pageSize
@@ -292,7 +292,7 @@ export const listProducts = async (req, res) => {
 
     return res.status(200).json({ 
       data: products, 
-      total,
+      totalItems: total,
       totalPages,
       currentPage,
       limit: pageSize
@@ -378,3 +378,4 @@ export const recommendProducts = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
