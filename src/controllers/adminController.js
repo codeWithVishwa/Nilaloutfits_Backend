@@ -89,3 +89,44 @@ export const listVariants = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+export const listGroupedProducts = async (req, res) => {
+  try {
+    const grouped = await Product.aggregate([
+      {
+        $match: { status: 'Active' }
+      },
+      {
+        $group: {
+          _id: '$title',
+          productIds: { $push: '$_id' },
+          count: { $sum: 1 },
+          image: { $first: { $arrayElemAt: ['$images', 0] } },
+          price: { $first: '$price' },
+          categoryId: { $first: '$categoryId' },
+          brand: { $first: '$brand' }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          title: '$_id',
+          productIds: 1,
+          count: 1,
+          image: 1,
+          price: 1,
+          categoryId: 1,
+          brand: 1
+        }
+      },
+      {
+        $sort: { count: -1, title: 1 }
+      }
+    ]);
+
+    res.status(200).json(grouped);
+  } catch (error) {
+    console.error('List grouped products error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};

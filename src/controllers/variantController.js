@@ -88,3 +88,110 @@ export const listVariantsByProduct = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+export const bulkCreateVariants = async (req, res) => {
+  try {
+    const { productIds, sizes, colors } = req.body;
+
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+      return res.status(400).json({ message: 'productIds array is required' });
+    }
+
+    if (!Array.isArray(sizes) || sizes.length === 0) {
+      return res.status(400).json({ message: 'sizes array is required' });
+    }
+
+    // Fetch all products to get their price and stock
+    const products = await Product.find({ _id: { $in: productIds } }).select('_id title price stock');
+
+    if (products.length === 0) {
+      return res.status(404).json({ message: 'No products found' });
+    }
+
+    const results = {
+      created: [],
+      updated: [],
+      skipped: []
+    };
+
+    // Support both single color (backward compatibility) and multiple colors
+    const colorArray = Array.isArray(colors) && colors.length > 0 ? colors : [undefined];
+
+    // Create variants for each product, size, and color combination
+    for (const product of products) {
+      for (const size of sizes) {
+        for (const color of colorArray) {
+          const availability = product.stock > 0 ? 'InStock' : 'OutOfStock';
+          
+          // Generate unique SKU: TITLE-SIZE-COLOR-PRODUCTID
+          const titlePrefix = product.title.substring(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, '');
+          const colorSuffix = color ? `-${color.trim().substring(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, '')}` : '';
+          const productIdSuffix = product._id.toString().substring(product._id.toString().length - 8);
+          const sku = `${titlePrefix}-${size.trim().toUpperCase()}${colorSuffix}-${productIdSuffix}`;
+
+          try {
+            // Check if variant already exists by productId + size + color OR by SKU
+            const existingVariant = await Variant.findOne({
+              $or: [
+                {
+                  productId: product._id,
+                  size: size.trim(),
+                  ...(color ? { color: color.trim() } : {})
+                },
+                { sku }
+              ]
+            });
+
+            if (existingVariant) {
+              results.skipped.push({ 
+                productId: product._id, 
+                size: size.trim(),
+                color: color || 'N/A',
+                reason: existingVariant.sku === sku ? 'SKU already exists' : 'Variant already exists'
+              });
+              continue;
+            }
+
+            // Create new variant
+            const variant = await Variant.create({
+              productId: product._id,
+              size: size.trim(),
+              color: color ? color.trim() : undefined,
+              sku,
+              price: product.price,
+              stock: product.stock,
+              availability
+            });
+
+            results.created.push(variant);
+            emitStockUpdate(variant);
+          } catch (error) {
+            console.error(`Error creating variant for product ${product._id}, size ${size}, color ${color}:`, error);
+            results.skipped.push({ 
+              productId: product._id, 
+              size: size.trim(),
+              color: color || 'N/A',
+              reason: error?.code === 11000 ? 'Duplicate key error' : error.message 
+            });
+          }
+        }
+      }
+    }
+
+    res.status(201).json({
+      message: 'Bulk variant creation completed',
+      summary: {
+        totalProducts: products.length,
+        totalSizes: sizes.length,
+        totalColors: colorArray.filter(c => c).length || 0,
+        created: results.created.length,
+        updated: results.updated.length,
+        skipped: results.skipped.length
+      },
+      results
+    });
+  } catch (error) {
+    console.error('Bulk create variants error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
