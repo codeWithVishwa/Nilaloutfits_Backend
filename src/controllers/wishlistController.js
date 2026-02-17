@@ -19,7 +19,10 @@ export const getWishlist = async (req, res) => {
 
 export const addToWishlist = async (req, res) => {
   try {
-    const { productId, preferredVariantId } = req.body;
+    const body = typeof req.body === 'string'
+      ? { productId: req.body }
+      : (req.body || {});
+    const { productId, preferredVariantId } = body;
     console.log('Add to wishlist - User ID:', req.user._id, 'Product ID:', productId);
     
     if (!productId) {

@@ -91,7 +91,7 @@ export const listVariantsByProduct = async (req, res) => {
 
 export const bulkCreateVariants = async (req, res) => {
   try {
-    const { productIds, sizes, colors } = req.body;
+    const { productIds, sizes, colors, replaceColors } = req.body;
 
     if (!Array.isArray(productIds) || productIds.length === 0) {
       return res.status(400).json({ message: 'productIds array is required' });
@@ -116,6 +116,16 @@ export const bulkCreateVariants = async (req, res) => {
 
     // Support both single color (backward compatibility) and multiple colors
     const colorArray = Array.isArray(colors) && colors.length > 0 ? colors : [undefined];
+    const normalizedColors = colorArray
+      .filter((color) => typeof color === 'string' && color.trim().length > 0)
+      .map((color) => color.trim());
+
+    if (replaceColors && normalizedColors.length > 0) {
+      await Variant.deleteMany({
+        productId: { $in: productIds },
+        color: { $nin: normalizedColors }
+      });
+    }
 
     // Create variants for each product, size, and color combination
     for (const product of products) {
