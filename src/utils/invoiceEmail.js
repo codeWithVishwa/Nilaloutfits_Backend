@@ -178,7 +178,7 @@ export const sendOrderInvoiceEmail = async (orderId) => {
 
           <!-- CTA -->
           <div style="text-align:center;margin-top:22px;">
-            <a href="#" style="background:#2563eb;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:600;display:inline-block;">
+            <a href="https://nilaloutfits.com/account" style="background:#2563eb;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:600;display:inline-block;">
               View Order
             </a>
           </div>
