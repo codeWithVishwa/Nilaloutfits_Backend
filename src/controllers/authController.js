@@ -52,8 +52,27 @@ const generateEmailVerifyToken = () => {
   return { rawToken, hashedToken };
 };
 
+const resolveClientBaseUrl = () => {
+  const fallbackUrl = "http://localhost:3000";
+  const rawValue = process.env.CLIENT_URL || fallbackUrl;
+  const candidates = rawValue
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      return new URL(candidate).toString().replace(/\/$/, "");
+    } catch (error) {
+      continue;
+    }
+  }
+
+  return fallbackUrl;
+};
+
 const sendVerificationEmail = async (user, rawToken) => {
-  const clientUrl = process.env.CLIENT_URL || "http://localhost:3000";
+  const clientUrl = resolveClientBaseUrl();
   const verifyUrl = `${clientUrl}/verify-email?token=${rawToken}`;
 
   await sendEmail({
@@ -124,7 +143,7 @@ const sendVerificationEmail = async (user, rawToken) => {
 };
 
 const sendResetEmail = async (user, rawToken) => {
-  const clientUrl = process.env.CLIENT_URL || "http://localhost:3000";
+  const clientUrl = resolveClientBaseUrl();
   const resetUrl = `${clientUrl}/reset-password?token=${rawToken}`;
 
   await sendEmail({
