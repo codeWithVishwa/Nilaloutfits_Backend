@@ -258,12 +258,14 @@ export const login = async (req, res) => {
       "+password",
     );
     if (!user) {
-      return res.status(401).json({ message: "Invalid credentials" });
+      return res
+        .status(401)
+        .json({ message: "This email is not registered yet" });
     }
 
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
-      return res.status(401).json({ message: "Invalid credentials" });
+      return res.status(401).json({ message: "Wrong password" });
     }
 
     if (!user.isEmailVerified) {
