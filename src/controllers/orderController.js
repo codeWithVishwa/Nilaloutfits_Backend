@@ -8,7 +8,8 @@ import { emitOrderUpdate, emitStockUpdate } from '../socket/index.js';
 
 export const createOrder = async (req, res) => {
   try {
-    const { items, address, shippingFee = 0, tax = 0, paymentMethod = 'COD' } = req.body;
+    const { items, address, shippingFee = 0, tax = 0, paymentMethod = 'COD', guestEmail } = req.body;
+    const isGuestCheckout = !req.user;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'Order items are required' });
@@ -30,6 +31,13 @@ export const createOrder = async (req, res) => {
 
     if (missingFields.length > 0) {
       return res.status(400).json({ message: `Missing address fields: ${missingFields.join(', ')}` });
+    }
+
+    if (isGuestCheckout) {
+      const normalizedGuestEmail = String(guestEmail || '').trim().toLowerCase();
+      if (!normalizedGuestEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedGuestEmail)) {
+        return res.status(400).json({ message: 'Valid guest email is required' });
+      }
     }
 
     const variantIds = items.map((i) => i.variantId);
@@ -68,7 +76,14 @@ export const createOrder = async (req, res) => {
     const total = subtotal + shippingFee + tax;
 
     const order = await Order.create({
-      userId: req.user._id,
+      userId: req.user?._id,
+      guestInfo: isGuestCheckout
+        ? {
+          email: String(guestEmail || '').trim().toLowerCase(),
+          name: address.name,
+          phone: address.phone,
+        }
+        : undefined,
       items: orderItems,
       address,
       subtotal,
@@ -87,10 +102,12 @@ export const createOrder = async (req, res) => {
       provider: normalizedPaymentMethod === 'COD' ? 'COD' : 'Razorpay',
     });
 
-    await Cart.findOneAndUpdate(
-      { userId: req.user._id },
-      { $set: { items: [] } }
-    );
+    if (req.user?._id) {
+      await Cart.findOneAndUpdate(
+        { userId: req.user._id },
+        { $set: { items: [] } }
+      );
+    }
 
     emitOrderUpdate(order);
 
@@ -116,6 +133,37 @@ export const listOrders = async (req, res) => {
     res.status(200).json(orders);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const trackGuestOrder = async (req, res) => {
+  try {
+    const { orderId, email } = req.body || {};
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+
+    if (!orderId || !normalizedEmail) {
+      return res.status(400).json({ message: 'orderId and email are required' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ message: 'Invalid orderId' });
+    }
+
+    const order = await Order.findOne({
+      _id: orderId,
+      'guestInfo.email': normalizedEmail,
+    })
+      .populate('items.productId', 'title images brand')
+      .populate('items.variantId', 'size color sku price')
+      .select('-guestInfo');
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    return res.status(200).json(order);
+  } catch {
+    return res.status(500).json({ message: 'Server error' });
   }
 };
 

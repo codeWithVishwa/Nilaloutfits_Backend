@@ -27,7 +27,12 @@ const addressSchema = new mongoose.Schema(
 
 const orderSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    guestInfo: {
+      email: { type: String, lowercase: true, trim: true },
+      name: { type: String, trim: true },
+      phone: { type: String, trim: true },
+    },
     items: [orderItemSchema],
     address: addressSchema,
     status: { type: String, enum: ORDER_STATUS, default: 'Created' },

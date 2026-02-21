@@ -55,3 +55,37 @@ export const authorizeRole = (...roles) => (req, res, next) => {
   }
   next();
 };
+
+export const protectOptional = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const tokenFromHeader = authHeader && authHeader.startsWith('Bearer ')
+      ? authHeader.split(' ')[1]
+      : null;
+
+    if (!tokenFromHeader) {
+      req.user = null;
+      req.userPermissions = new Set();
+      return next();
+    }
+
+    const decoded = jwt.verify(tokenFromHeader, process.env.JWT_ACCESS_SECRET);
+    const user = await User.findById(decoded.id).select('-password');
+
+    if (!user) {
+      req.user = null;
+      req.userPermissions = new Set();
+      return next();
+    }
+
+    const basePermissions = ROLE_PERMISSIONS[user.role] || [];
+    const extraPermissions = user.permissions || [];
+    req.user = user;
+    req.userPermissions = new Set([...basePermissions, ...extraPermissions]);
+    return next();
+  } catch {
+    req.user = null;
+    req.userPermissions = new Set();
+    return next();
+  }
+};

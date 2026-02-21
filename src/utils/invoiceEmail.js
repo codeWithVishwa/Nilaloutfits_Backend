@@ -25,7 +25,8 @@ export const sendOrderInvoiceEmail = async (orderId) => {
     .populate("items.productId", "title images brand")
     .populate("items.variantId", "size color sku price");
 
-  if (!order || !order.userId?.email) return;
+  const recipientEmail = order?.userId?.email || order?.guestInfo?.email;
+  if (!order || !recipientEmail) return;
 
   const totalItems = order.items.reduce((sum, item) => sum + item.quantity, 0);
   const itemsHtml = order.items
@@ -87,7 +88,7 @@ export const sendOrderInvoiceEmail = async (orderId) => {
 
           <!-- Greeting -->
           <div style="margin-top:20px;font-size:14px;color:#0f172a;">
-            Hi ${order.userId.name || "there"},<br/>
+            Hi ${order.userId?.name || order.guestInfo?.name || "there"},<br/>
             <span style="color:#475569;">Your order has been placed successfully.</span>
           </div>
 
@@ -199,7 +200,7 @@ export const sendOrderInvoiceEmail = async (orderId) => {
   const text = `Order #${order._id}\nTotal Items: ${totalItems}\nTotal: ${formatCurrency(order.total)}`;
 
   await sendEmail({
-    to: order.userId.email,
+    to: recipientEmail,
     subject: `Order confirmed #${order._id}`,
     html,
     text,

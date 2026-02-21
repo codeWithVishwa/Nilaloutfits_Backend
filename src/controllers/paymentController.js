@@ -31,6 +31,12 @@ export const createRazorpayOrder = async (req, res) => {
 
     const order = await Order.findById(orderId);
     if (!order) return res.status(404).json({ message: 'Order not found' });
+    if (req.user && order.userId && String(order.userId) !== String(req.user._id)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+    if (!req.user && order.userId) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
 
     const razorpayOrder = await razorpay.orders.create({
       amount: Math.round(order.total * 100),
@@ -81,6 +87,15 @@ export const verifyPaymentSignature = async (req, res) => {
     );
 
     if (payment) {
+      const order = await Order.findById(payment.orderId);
+      if (order) {
+        if (req.user && order.userId && String(order.userId) !== String(req.user._id)) {
+          return res.status(403).json({ message: 'Forbidden' });
+        }
+        if (!req.user && order.userId) {
+          return res.status(403).json({ message: 'Forbidden' });
+        }
+      }
       await Order.findByIdAndUpdate(payment.orderId, {
         paymentStatus: 'Paid',
         status: 'Paid',
@@ -146,6 +161,15 @@ export const markPaymentFailed = async (req, res) => {
       : payment?.orderId
         ? await Order.findById(payment.orderId)
         : null;
+
+    if (order) {
+      if (req.user && order.userId && String(order.userId) !== String(req.user._id)) {
+        return res.status(403).json({ message: 'Forbidden' });
+      }
+      if (!req.user && order.userId) {
+        return res.status(403).json({ message: 'Forbidden' });
+      }
+    }
 
     if (order && order.paymentStatus !== 'Failed' && order.status !== 'Cancelled') {
       await restoreOrderStock(order);
