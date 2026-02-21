@@ -84,16 +84,17 @@ app.use(
 /* ---------------- RATE LIMITING ---------------- */
 
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1500,
+  windowMs: 15 * 60 * 2500,
   max: 500,
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 app.use(globalLimiter);
+app.set("trust proxy", 1);
 
 const authLimiter = rateLimit({
-  windowMs: 5 * 60 * 1500,
+  windowMs: 5 * 60 * 2500,
   max: 10,
   message: 'Too many attempts. Try later.',
 });
