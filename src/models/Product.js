@@ -9,6 +9,8 @@ const productSchema = new mongoose.Schema(
     subcategoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subcategory' },
     brand: { type: String, trim: true },
     price: { type: Number, required: true, min: 0 },
+    regularPrice: { type: Number, min: 0 },
+    sellingPrice: { type: Number, min: 0 },
     stock: { type: Number, required: true, min: 0 },
     images: [{ type: String }],
     colorVariants: [

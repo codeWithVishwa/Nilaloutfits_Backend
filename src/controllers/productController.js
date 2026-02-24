@@ -40,9 +40,24 @@ export const createProduct = async (req, res) => {
       featuredBestSelling,
       featuredRecent,
       featuredVariantIds,
+      regularPrice,
+      sellingPrice,
     } = req.body;
-    if (!title || !categoryId || price === undefined || stock === undefined) {
-      return res.status(400).json({ message: 'Title, categoryId, price, and stock are required' });
+    const resolvedSellingPrice =
+      sellingPrice !== undefined && sellingPrice !== null && String(sellingPrice).trim() !== ''
+        ? Number(sellingPrice)
+        : Number(price);
+    const resolvedRegularPrice =
+      regularPrice !== undefined && regularPrice !== null && String(regularPrice).trim() !== ''
+        ? Number(regularPrice)
+        : undefined;
+
+    if (!title || !categoryId || Number.isNaN(resolvedSellingPrice) || stock === undefined) {
+      return res.status(400).json({ message: 'Title, categoryId, selling/price, and stock are required' });
+    }
+
+    if (resolvedRegularPrice !== undefined && Number.isNaN(resolvedRegularPrice)) {
+      return res.status(400).json({ message: 'regularPrice must be a valid number' });
     }
 
     const cleanSubcategoryId = subcategoryId ? subcategoryId : undefined;
@@ -54,7 +69,9 @@ export const createProduct = async (req, res) => {
       categoryId,
       subcategoryId: cleanSubcategoryId,
       brand,
-      price,
+      price: resolvedSellingPrice,
+      sellingPrice: resolvedSellingPrice,
+      regularPrice: resolvedRegularPrice,
       stock,
       images,
       colorVariants,
@@ -323,6 +340,28 @@ export const updateProduct = async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
     if (updates.title) updates.slug = await generateUniqueSlug(updates.title, id);
+    if (updates.sellingPrice !== undefined || updates.price !== undefined) {
+      const nextSellingPrice =
+        updates.sellingPrice !== undefined && updates.sellingPrice !== null && String(updates.sellingPrice).trim() !== ''
+          ? Number(updates.sellingPrice)
+          : Number(updates.price);
+      if (Number.isNaN(nextSellingPrice)) {
+        return res.status(400).json({ message: 'sellingPrice must be a valid number' });
+      }
+      updates.sellingPrice = nextSellingPrice;
+      updates.price = nextSellingPrice;
+    }
+    if (updates.regularPrice !== undefined) {
+      if (updates.regularPrice === null || String(updates.regularPrice).trim() === '') {
+        updates.regularPrice = undefined;
+      } else {
+        const nextRegularPrice = Number(updates.regularPrice);
+        if (Number.isNaN(nextRegularPrice)) {
+          return res.status(400).json({ message: 'regularPrice must be a valid number' });
+        }
+        updates.regularPrice = nextRegularPrice;
+      }
+    }
     if (updates.featuredBestSelling !== undefined) {
       updates.featuredBestSelling = Boolean(updates.featuredBestSelling);
     }

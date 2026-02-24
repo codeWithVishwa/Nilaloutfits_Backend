@@ -1,4 +1,6 @@
 import Category from '../models/Category.js';
+import Product from '../models/Product.js';
+import Subcategory from '../models/Subcategory.js';
 import { slugify } from '../utils/slug.js';
 import { getPagination } from '../utils/pagination.js';
 
@@ -70,5 +72,55 @@ export const deleteCategory = async (req, res) => {
     res.status(200).json({ message: 'Category deleted' });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const mergeCategory = async (req, res) => {
+  try {
+    const { id: sourceCategoryId } = req.params;
+    const { targetCategoryId, deactivateSource = true } = req.body;
+
+    if (!targetCategoryId) {
+      return res.status(400).json({ message: 'targetCategoryId is required' });
+    }
+
+    if (String(sourceCategoryId) === String(targetCategoryId)) {
+      return res.status(400).json({ message: 'Source and target category cannot be the same' });
+    }
+
+    const [sourceCategory, targetCategory] = await Promise.all([
+      Category.findById(sourceCategoryId),
+      Category.findById(targetCategoryId),
+    ]);
+
+    if (!sourceCategory) return res.status(404).json({ message: 'Source category not found' });
+    if (!targetCategory) return res.status(404).json({ message: 'Target category not found' });
+
+    const [productsUpdate, subcategoriesUpdate] = await Promise.all([
+      Product.updateMany(
+        { categoryId: sourceCategoryId },
+        { $set: { categoryId: targetCategoryId } }
+      ),
+      Subcategory.updateMany(
+        { parentCategoryId: sourceCategoryId },
+        { $set: { parentCategoryId: targetCategoryId } }
+      ),
+    ]);
+
+    if (deactivateSource) {
+      sourceCategory.status = 'Inactive';
+      await sourceCategory.save();
+    }
+
+    return res.status(200).json({
+      message: 'Category merged successfully',
+      sourceCategoryId,
+      targetCategoryId,
+      productsUpdated: productsUpdate.modifiedCount || 0,
+      subcategoriesUpdated: subcategoriesUpdate.modifiedCount || 0,
+      sourceDeactivated: Boolean(deactivateSource),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Server error' });
   }
 };
