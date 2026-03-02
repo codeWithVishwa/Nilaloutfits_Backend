@@ -40,38 +40,55 @@ export const addToCart = async (req, res) => {
       if (defaultVariant) {
         resolvedVariantId = defaultVariant._id;
       } else {
-        const variantCount = await Variant.countDocuments({ productId });
-        if (variantCount > 0) {
-          return res.status(400).json({ message: 'No in-stock variant available for this product' });
-        }
-
         const product = await Product.findById(productId).select('price stock');
         if (!product) {
           return res.status(404).json({ message: 'Product not found' });
         }
-        if (product.stock <= 0) {
+
+        const [oneSizeVariant, hasRealVariants] = await Promise.all([
+          Variant.findOne({ productId, size: 'ONE_SIZE' }),
+          Variant.exists({ productId, size: { $ne: 'ONE_SIZE' } }),
+        ]);
+
+        if (hasRealVariants) {
+          return res.status(400).json({ message: 'No in-stock variant available for this product' });
+        }
+        if (Number(product.stock || 0) <= 0) {
           return res.status(400).json({ message: 'No in-stock variant available for this product' });
         }
 
-        try {
-          const createdVariant = await Variant.create({
-            productId,
-            size: 'ONE_SIZE',
-            sku: `AUTO-${productId}`.toUpperCase(),
-            price: product.price,
-            stock: product.stock,
-            availability: 'InStock',
-          });
-          resolvedVariantId = createdVariant._id;
-        } catch (error) {
-          if (error?.code === 11000) {
-            const existingVariant = await Variant.findOne({ productId, size: 'ONE_SIZE' });
-            if (!existingVariant) {
-              return res.status(500).json({ message: 'Server error' });
+        if (oneSizeVariant) {
+          oneSizeVariant.price = product.price;
+          oneSizeVariant.stock = Number(product.stock || 0);
+          oneSizeVariant.availability = oneSizeVariant.stock > 0 ? 'InStock' : 'OutOfStock';
+          await oneSizeVariant.save();
+          resolvedVariantId = oneSizeVariant._id;
+        } else {
+          try {
+            const createdVariant = await Variant.create({
+              productId,
+              size: 'ONE_SIZE',
+              sku: `AUTO-${productId}`.toUpperCase(),
+              price: product.price,
+              stock: product.stock,
+              availability: 'InStock',
+            });
+            resolvedVariantId = createdVariant._id;
+          } catch (error) {
+            if (error?.code === 11000) {
+              const existingVariant = await Variant.findOne({ productId, size: 'ONE_SIZE' });
+              if (!existingVariant) {
+                return res.status(500).json({ message: 'Server error' });
+              }
+
+              existingVariant.price = product.price;
+              existingVariant.stock = Number(product.stock || 0);
+              existingVariant.availability = existingVariant.stock > 0 ? 'InStock' : 'OutOfStock';
+              await existingVariant.save();
+              resolvedVariantId = existingVariant._id;
+            } else {
+              throw error;
             }
-            resolvedVariantId = existingVariant._id;
-          } else {
-            throw error;
           }
         }
       }
