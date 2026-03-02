@@ -6,7 +6,7 @@ import Variant from '../models/Variant.js';
 const getPopulatedCart = async (userId) => {
   return Cart.findOne({ userId })
     .populate('items.productId', 'title images brand')
-    .populate('items.variantId', 'size color sku price');
+    .populate('items.variantId', 'size color sku price stock');
 };
 
 export const getCart = async (req, res) => {
@@ -86,11 +86,21 @@ export const addToCart = async (req, res) => {
       return res.status(400).json({ message: 'Variant does not belong to this product' });
     }
 
-    if (!variant || variant.stock < quantity) {
-      return res.status(400).json({ message: 'Insufficient stock' });
-    }
-
     const existing = await Cart.findOne({ userId: req.user._id, 'items.variantId': resolvedVariantId });
+    const existingItem = existing?.items?.find(
+      (item) => String(item.variantId) === String(resolvedVariantId)
+    );
+    const currentQuantity = Number(existingItem?.quantity || 0);
+    const requestedQuantity = Number(quantity || 0);
+    const totalRequestedQuantity = currentQuantity + requestedQuantity;
+
+    if (!variant || variant.stock < totalRequestedQuantity) {
+      const availableStock = Number(variant?.stock || 0);
+      return res.status(400).json({
+        message: `Only ${availableStock} unit${availableStock === 1 ? '' : 's'} are available for this product.`,
+        availableStock,
+      });
+    }
 
     let cart;
     if (existing) {
@@ -146,7 +156,11 @@ export const updateCartItem = async (req, res) => {
 
     const variant = await Variant.findById(variantId);
     if (!variant || variant.stock < quantity) {
-      return res.status(400).json({ message: 'Insufficient stock' });
+      const availableStock = Number(variant?.stock || 0);
+      return res.status(400).json({
+        message: `Only ${availableStock} unit${availableStock === 1 ? '' : 's'} are available for this product.`,
+        availableStock,
+      });
     }
 
     await Cart.findOneAndUpdate(
