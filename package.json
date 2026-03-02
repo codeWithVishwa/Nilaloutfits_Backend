@@ -10,6 +10,9 @@
     "dev": "nodemon index.js",
     "start": "node index.js",
     "create:verified-user": "node scripts/create-verified-user.js",
+    "seed:category-products": "node scripts/seed-category-products.js",
+    "seed:kids-subcategories": "node scripts/seed-kids-subcategories.js",
+    "migrate:subcategory-indexes": "node scripts/migrate-subcategory-indexes.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {

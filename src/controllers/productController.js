@@ -1,6 +1,7 @@
 import Product from '../models/Product.js';
 import Variant from '../models/Variant.js';
 import Order from '../models/Order.js';
+import Subcategory from '../models/Subcategory.js';
 import { slugify } from '../utils/slug.js';
 import { getPagination } from '../utils/pagination.js';
 
@@ -102,6 +103,7 @@ export const listProducts = async (req, res) => {
       q, 
       categoryId, 
       subcategoryId, 
+      mainSubcategoryId,
       size, 
       priceMin, 
       priceMax, 
@@ -123,6 +125,26 @@ export const listProducts = async (req, res) => {
     // Add subcategory filter only if provided and not empty
     if (subcategoryId && subcategoryId.trim()) {
       filter.subcategoryId = subcategoryId.trim();
+    } else if (mainSubcategoryId && mainSubcategoryId.trim()) {
+      const mainId = mainSubcategoryId.trim();
+      const relatedSubcategories = await Subcategory.find({
+        $or: [{ _id: mainId }, { parentSubcategoryId: mainId }],
+      })
+        .select('_id')
+        .lean();
+
+      const relatedSubcategoryIds = relatedSubcategories.map((sub) => sub._id);
+      if (relatedSubcategoryIds.length === 0) {
+        return res.status(200).json({
+          data: [],
+          totalItems: 0,
+          totalPages: 0,
+          currentPage: 1,
+          limit: limit || 12,
+        });
+      }
+
+      filter.subcategoryId = { $in: relatedSubcategoryIds };
     }
 
     // Add text search only if provided and not empty
@@ -417,4 +439,3 @@ export const recommendProducts = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
-

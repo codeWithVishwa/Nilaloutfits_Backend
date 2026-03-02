@@ -33,6 +33,10 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Must be set before any rate limiter so IP detection is correct behind proxies.
+app.set('trust proxy', Number(process.env.TRUST_PROXY || 1));
 
 /* ---------------- BASIC HARDENING ---------------- */
 
@@ -84,19 +88,38 @@ app.use(
 /* ---------------- RATE LIMITING ---------------- */
 
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 2500,
-  max: 500,
+  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
+  max: Number(process.env.RATE_LIMIT_MAX || (isProduction ? 1200 : 10000)),
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => !isProduction,
+  message: {
+    message: 'Too many requests. Please try again shortly.',
+  },
 });
 
 app.use(globalLimiter);
-app.set("trust proxy", 1);
 
-const authLimiter = rateLimit({
-  windowMs: 5 * 60 * 2500,
-  max: 10,
-  message: 'Too many attempts. Try later.',
+const authSensitiveLimiter = rateLimit({
+  windowMs: Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS || 10 * 60 * 1000),
+  max: Number(process.env.AUTH_RATE_LIMIT_MAX || (isProduction ? 30 : 200)),
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => !isProduction,
+  message: {
+    message: 'Too many auth attempts. Please try again later.',
+  },
+});
+
+const authRefreshLimiter = rateLimit({
+  windowMs: Number(process.env.AUTH_REFRESH_RATE_LIMIT_WINDOW_MS || 1 * 60 * 1000),
+  max: Number(process.env.AUTH_REFRESH_RATE_LIMIT_MAX || (isProduction ? 180 : 2000)),
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => !isProduction,
+  message: {
+    message: 'Too many refresh requests. Please retry shortly.',
+  },
 });
 
 /* ---------------- STATIC UPLOADS (SAFE) ---------------- */
@@ -114,7 +137,17 @@ app.use(
 
 /* ---------------- ROUTES ---------------- */
 
-app.use('/api/auth', authLimiter, authRoutes);
+// Apply strict limits only to brute-force-prone endpoints.
+app.use('/api/auth/login', authSensitiveLimiter);
+app.use('/api/auth/register', authSensitiveLimiter);
+app.use('/api/auth/forgot-password', authSensitiveLimiter);
+app.use('/api/auth/reset-password', authSensitiveLimiter);
+app.use('/api/auth/verify-email', authSensitiveLimiter);
+app.use('/api/auth/resend-verification', authSensitiveLimiter);
+// Keep refresh permissive to avoid accidental logouts during normal app polling/retries.
+app.use('/api/auth/refresh', authRefreshLimiter);
+
+app.use('/api/auth', authRoutes);
 
 app.use('/api/categories', categoryRoutes);
 app.use('/api/subcategories', subcategoryRoutes);
