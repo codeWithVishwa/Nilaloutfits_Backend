@@ -35,8 +35,20 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
+const parseTrustProxy = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return isProduction ? true : 1;
+  }
+  const text = String(value).trim().toLowerCase();
+  if (text === 'true') return true;
+  if (text === 'false') return false;
+  const asNumber = Number(text);
+  if (!Number.isNaN(asNumber)) return asNumber;
+  return value;
+};
+
 // Must be set before any rate limiter so IP detection is correct behind proxies.
-app.set('trust proxy', Number(process.env.TRUST_PROXY || 1));
+app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY));
 
 /* ---------------- BASIC HARDENING ---------------- */
 
@@ -87,25 +99,42 @@ app.use(
 
 /* ---------------- RATE LIMITING ---------------- */
 
+const getRateLimitKey = (req) => {
+  const userAgent = (req.get('user-agent') || 'unknown').slice(0, 120);
+  return `${req.ip}|${userAgent}`;
+};
+
+const isSkippableRateLimitRequest = (req) => !isProduction || req.method === 'OPTIONS';
+
 const globalLimiter = rateLimit({
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
-  max: Number(process.env.RATE_LIMIT_MAX || (isProduction ? 1200 : 10000)),
+  max: Number(process.env.RATE_LIMIT_MAX || (isProduction ? 4000 : 10000)),
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => !isProduction,
+  keyGenerator: getRateLimitKey,
+  skip: isSkippableRateLimitRequest,
+  handler: (req, res) => {
+    const retryAfterSeconds = Math.ceil((req.rateLimit?.resetTime?.getTime?.() || Date.now()) - Date.now()) / 1000;
+    return res.status(429).json({
+      message: 'Too many requests. Please try again shortly.',
+      retryAfterSeconds: Math.max(1, Math.ceil(retryAfterSeconds)),
+    });
+  },
   message: {
     message: 'Too many requests. Please try again shortly.',
   },
 });
 
-app.use(globalLimiter);
+app.use('/api', globalLimiter);
 
 const authSensitiveLimiter = rateLimit({
   windowMs: Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS || 10 * 60 * 1000),
-  max: Number(process.env.AUTH_RATE_LIMIT_MAX || (isProduction ? 30 : 200)),
+  max: Number(process.env.AUTH_RATE_LIMIT_MAX || (isProduction ? 40 : 200)),
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => !isProduction,
+  keyGenerator: getRateLimitKey,
+  skip: isSkippableRateLimitRequest,
+  skipSuccessfulRequests: true,
   message: {
     message: 'Too many auth attempts. Please try again later.',
   },
@@ -116,7 +145,8 @@ const authRefreshLimiter = rateLimit({
   max: Number(process.env.AUTH_REFRESH_RATE_LIMIT_MAX || (isProduction ? 180 : 2000)),
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => !isProduction,
+  keyGenerator: getRateLimitKey,
+  skip: isSkippableRateLimitRequest,
   message: {
     message: 'Too many refresh requests. Please retry shortly.',
   },
