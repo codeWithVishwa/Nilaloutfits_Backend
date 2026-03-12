@@ -5,6 +5,7 @@ import {
   deleteVariant,
   listVariantsByProduct,
   bulkCreateVariants,
+  resolveVariantForCheckout,
 } from '../controllers/variantController.js';
 import { protect, authorize } from '../middleware/auth.js';
 import { audit } from '../middleware/audit.js';
@@ -13,6 +14,7 @@ import { PERMISSIONS } from '../config/roles.js';
 const router = express.Router();
 
 router.get('/product/:productId', listVariantsByProduct);
+router.post('/resolve', resolveVariantForCheckout);
 router.post('/', protect, authorize(PERMISSIONS.CATALOG_WRITE), audit('create', 'Variant'), createVariant);
 router.post('/bulk', protect, authorize(PERMISSIONS.CATALOG_WRITE), audit('create', 'Variant'), bulkCreateVariants);
 router.put('/:id', protect, authorize(PERMISSIONS.CATALOG_WRITE), audit('update', 'Variant'), updateVariant);

@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Variant from '../models/Variant.js';
 import Product from '../models/Product.js';
 import { emitStockUpdate } from '../socket/index.js';
@@ -86,6 +87,82 @@ export const listVariantsByProduct = async (req, res) => {
     res.status(200).json(variants);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const resolveVariantForCheckout = async (req, res) => {
+  try {
+    const { productId } = req.body || {};
+
+    if (!productId) {
+      return res.status(400).json({ message: 'productId is required' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({ message: 'Invalid productId' });
+    }
+
+    const inStockVariant = await Variant.findOne({
+      productId,
+      availability: 'InStock',
+      stock: { $gt: 0 },
+    }).sort({ stock: -1, price: 1, size: 1 });
+
+    if (inStockVariant) {
+      return res.status(200).json(inStockVariant);
+    }
+
+    const product = await Product.findById(productId).select('price stock');
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    const [oneSizeVariant, hasRealVariants] = await Promise.all([
+      Variant.findOne({ productId, size: 'ONE_SIZE' }),
+      Variant.exists({ productId, size: { $ne: 'ONE_SIZE' } }),
+    ]);
+
+    if (hasRealVariants || Number(product.stock || 0) <= 0) {
+      return res.status(400).json({ message: 'No in-stock variant available for this product' });
+    }
+
+    if (oneSizeVariant) {
+      oneSizeVariant.price = product.price;
+      oneSizeVariant.stock = Number(product.stock || 0);
+      oneSizeVariant.availability = oneSizeVariant.stock > 0 ? 'InStock' : 'OutOfStock';
+      await oneSizeVariant.save();
+      emitStockUpdate(oneSizeVariant);
+      return res.status(200).json(oneSizeVariant);
+    }
+
+    try {
+      const createdVariant = await Variant.create({
+        productId,
+        size: 'ONE_SIZE',
+        sku: `AUTO-${productId}`.toUpperCase(),
+        price: product.price,
+        stock: product.stock,
+        availability: Number(product.stock || 0) > 0 ? 'InStock' : 'OutOfStock',
+      });
+      emitStockUpdate(createdVariant);
+      return res.status(200).json(createdVariant);
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+
+      const existingVariant = await Variant.findOne({ productId, size: 'ONE_SIZE' });
+      if (!existingVariant) {
+        return res.status(500).json({ message: 'Server error' });
+      }
+
+      existingVariant.price = product.price;
+      existingVariant.stock = Number(product.stock || 0);
+      existingVariant.availability = existingVariant.stock > 0 ? 'InStock' : 'OutOfStock';
+      await existingVariant.save();
+      emitStockUpdate(existingVariant);
+      return res.status(200).json(existingVariant);
+    }
+  } catch (error) {
+    return res.status(500).json({ message: 'Server error' });
   }
 };
 
