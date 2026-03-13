@@ -13,44 +13,41 @@ const parsePositiveNumber = (value, fallback) => {
 };
 
 const SHIPPING_ENABLED = String(process.env.SHIPPING_ENABLED || 'true').toLowerCase() !== 'false';
-const SHIPPING_BASE_FEE = parsePositiveNumber(process.env.SHIPPING_BASE_FEE, 80);
-const SHIPPING_FREE_THRESHOLD = parsePositiveNumber(process.env.SHIPPING_FREE_THRESHOLD, 1499);
-const SHIPPING_REMOTE_SURCHARGE = parsePositiveNumber(process.env.SHIPPING_REMOTE_SURCHARGE, 0);
-const SHIPPING_REMOTE_POSTAL_PREFIXES = String(process.env.SHIPPING_REMOTE_POSTAL_PREFIXES || '')
+const SHIPPING_TAMIL_NADU_FEE = parsePositiveNumber(process.env.SHIPPING_TAMIL_NADU_FEE, 50);
+const SHIPPING_OTHER_STATE_FEE = parsePositiveNumber(process.env.SHIPPING_OTHER_STATE_FEE, 100);
+const normalizeStateName = (value) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\./g, '')
+    .replace(/\s+/g, ' ');
+const SHIPPING_TAMIL_NADU_STATE_ALIASES = String(
+  process.env.SHIPPING_TAMIL_NADU_STATE_ALIASES || 'tamil nadu,tamilnadu,tn'
+)
   .split(',')
-  .map((prefix) => prefix.trim())
+  .map((stateName) => normalizeStateName(stateName))
   .filter(Boolean);
 const ORDER_TAX_RATE = parsePositiveNumber(process.env.ORDER_TAX_RATE, 0);
 const ORDER_CURRENCY = 'INR';
-
-const isRemotePostalCode = (postalCode) => {
-  const normalizedPostalCode = String(postalCode || '').trim();
-  if (!normalizedPostalCode || SHIPPING_REMOTE_POSTAL_PREFIXES.length === 0) return false;
-  return SHIPPING_REMOTE_POSTAL_PREFIXES.some((prefix) => normalizedPostalCode.startsWith(prefix));
-};
 
 const computeOrderAmounts = ({ subtotal = 0, address = {}, productShippingFee = 0 }) => {
   const normalizedSubtotal = toMoney(subtotal);
   const normalizedProductShippingFee = toMoney(productShippingFee);
 
   let baseShippingFee = 0;
+  let shippingZone = 'disabled';
   if (SHIPPING_ENABLED) {
-    const qualifiesForFreeShipping =
-      SHIPPING_FREE_THRESHOLD > 0 && normalizedSubtotal >= SHIPPING_FREE_THRESHOLD;
-    baseShippingFee = qualifiesForFreeShipping ? 0 : SHIPPING_BASE_FEE;
-
-    if (baseShippingFee > 0 && SHIPPING_REMOTE_SURCHARGE > 0 && isRemotePostalCode(address?.postalCode)) {
-      baseShippingFee += SHIPPING_REMOTE_SURCHARGE;
-    }
+    const normalizedState = normalizeStateName(address?.state);
+    const isTamilNadu = SHIPPING_TAMIL_NADU_STATE_ALIASES.includes(normalizedState);
+    baseShippingFee = isTamilNadu ? SHIPPING_TAMIL_NADU_FEE : SHIPPING_OTHER_STATE_FEE;
+    shippingZone = isTamilNadu ? 'tamil_nadu' : 'other_state';
   }
   baseShippingFee = toMoney(baseShippingFee);
   const shippingFee = toMoney(baseShippingFee + normalizedProductShippingFee);
 
   const tax = toMoney((normalizedSubtotal * ORDER_TAX_RATE) / 100);
   const total = toMoney(normalizedSubtotal + shippingFee + tax);
-  const amountForFreeShipping = SHIPPING_FREE_THRESHOLD > 0
-    ? toMoney(Math.max(0, SHIPPING_FREE_THRESHOLD - normalizedSubtotal))
-    : 0;
+  const amountForFreeShipping = 0;
 
   return {
     subtotal: normalizedSubtotal,
@@ -60,12 +57,15 @@ const computeOrderAmounts = ({ subtotal = 0, address = {}, productShippingFee = 
     currency: ORDER_CURRENCY,
     shippingConfig: {
       enabled: SHIPPING_ENABLED,
-      baseFee: toMoney(SHIPPING_BASE_FEE),
+      baseFee: baseShippingFee,
       baseShippingFee,
       productShippingFee: normalizedProductShippingFee,
-      freeThreshold: SHIPPING_FREE_THRESHOLD > 0 ? toMoney(SHIPPING_FREE_THRESHOLD) : 0,
-      remoteSurcharge: toMoney(SHIPPING_REMOTE_SURCHARGE),
-      remoteApplied: baseShippingFee > 0 && SHIPPING_REMOTE_SURCHARGE > 0 && isRemotePostalCode(address?.postalCode),
+      tamilNaduFee: toMoney(SHIPPING_TAMIL_NADU_FEE),
+      otherStateFee: toMoney(SHIPPING_OTHER_STATE_FEE),
+      shippingZone,
+      freeThreshold: 0,
+      remoteSurcharge: 0,
+      remoteApplied: false,
       isFreeShipping: shippingFee === 0,
       amountForFreeShipping,
     },
@@ -106,6 +106,7 @@ const prepareOrderItems = async (items = []) => {
 
   let subtotal = 0;
   let productShippingFee = 0;
+  const chargedProductIds = new Set();
   const orderItems = [];
 
   for (const [variantId, quantity] of requestedQtyByVariant.entries()) {
@@ -118,7 +119,11 @@ const prepareOrderItems = async (items = []) => {
     const productId = String(variant.productId);
     const unitShippingCost = productShippingCostById.get(productId) || 0;
     subtotal += unitPrice * quantity;
-    productShippingFee += unitShippingCost * quantity;
+    // Product shipping is charged once per product in an order, not per quantity.
+    if (!chargedProductIds.has(productId)) {
+      productShippingFee += unitShippingCost;
+      chargedProductIds.add(productId);
+    }
 
     orderItems.push({
       productId: variant.productId,
@@ -148,6 +153,7 @@ export const quoteOrderPricing = async (req, res) => {
       shippingFee: amounts.shippingFee,
       baseShippingFee: amounts.shippingConfig.baseShippingFee,
       productShippingFee: amounts.shippingConfig.productShippingFee,
+      shippingZone: amounts.shippingConfig.shippingZone,
       isFreeShipping: amounts.shippingConfig.isFreeShipping,
       freeShippingThreshold: amounts.shippingConfig.freeThreshold,
       amountForFreeShipping: amounts.shippingConfig.amountForFreeShipping,
