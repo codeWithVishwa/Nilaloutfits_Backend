@@ -43,6 +43,7 @@ export const createProduct = async (req, res) => {
       featuredVariantIds,
       regularPrice,
       sellingPrice,
+      shippingCost,
     } = req.body;
     const resolvedSellingPrice =
       sellingPrice !== undefined && sellingPrice !== null && String(sellingPrice).trim() !== ''
@@ -52,6 +53,10 @@ export const createProduct = async (req, res) => {
       regularPrice !== undefined && regularPrice !== null && String(regularPrice).trim() !== ''
         ? Number(regularPrice)
         : undefined;
+    const resolvedShippingCost =
+      shippingCost !== undefined && shippingCost !== null && String(shippingCost).trim() !== ''
+        ? Number(shippingCost)
+        : 0;
 
     if (!title || !categoryId || Number.isNaN(resolvedSellingPrice) || stock === undefined) {
       return res.status(400).json({ message: 'Title, categoryId, selling/price, and stock are required' });
@@ -59,6 +64,9 @@ export const createProduct = async (req, res) => {
 
     if (resolvedRegularPrice !== undefined && Number.isNaN(resolvedRegularPrice)) {
       return res.status(400).json({ message: 'regularPrice must be a valid number' });
+    }
+    if (!Number.isFinite(resolvedShippingCost) || resolvedShippingCost < 0) {
+      return res.status(400).json({ message: 'shippingCost must be a non-negative number' });
     }
 
     const cleanSubcategoryId = subcategoryId ? subcategoryId : undefined;
@@ -73,6 +81,7 @@ export const createProduct = async (req, res) => {
       price: resolvedSellingPrice,
       sellingPrice: resolvedSellingPrice,
       regularPrice: resolvedRegularPrice,
+      shippingCost: resolvedShippingCost,
       stock,
       images,
       colorVariants,
@@ -392,6 +401,17 @@ export const updateProduct = async (req, res) => {
     }
     if (updates.featuredVariantIds !== undefined) {
       updates.featuredVariantIds = Array.isArray(updates.featuredVariantIds) ? updates.featuredVariantIds : [];
+    }
+    if (updates.shippingCost !== undefined) {
+      if (updates.shippingCost === null || String(updates.shippingCost).trim() === '') {
+        updates.shippingCost = 0;
+      } else {
+        const nextShippingCost = Number(updates.shippingCost);
+        if (!Number.isFinite(nextShippingCost) || nextShippingCost < 0) {
+          return res.status(400).json({ message: 'shippingCost must be a non-negative number' });
+        }
+        updates.shippingCost = nextShippingCost;
+      }
     }
 
     const product = await Product.findByIdAndUpdate(id, updates, { new: true });
