@@ -34,6 +34,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 const isProduction = process.env.NODE_ENV === 'production';
+const RAZORPAY_WEBHOOK_PATH = '/api/payments/razorpay/webhook';
 
 const parseTrustProxy = (value) => {
   if (value === undefined || value === null || value === '') {
@@ -65,7 +66,14 @@ app.use(
 app.use(compression());
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({
+  limit: '2mb',
+  verify: (req, res, buf) => {
+    if (String(req.originalUrl || '').startsWith(RAZORPAY_WEBHOOK_PATH)) {
+      req.rawBody = Buffer.from(buf);
+    }
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(cookieParser());
 

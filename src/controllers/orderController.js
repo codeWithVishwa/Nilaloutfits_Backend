@@ -3,20 +3,19 @@ import Order from '../models/Order.js';
 import Variant from '../models/Variant.js';
 import Payment from '../models/Payment.js';
 import Cart from '../models/Cart.js';
-import { sendOrderInvoiceEmail } from '../utils/invoiceEmail.js';
 import { emitOrderUpdate, emitStockUpdate } from '../socket/index.js';
 
 export const createOrder = async (req, res) => {
   try {
-    const { items, address, shippingFee = 0, tax = 0, paymentMethod = 'COD', guestEmail } = req.body;
+    const { items, address, shippingFee = 0, tax = 0, paymentMethod = 'Razorpay', guestEmail } = req.body;
     const isGuestCheckout = !req.user;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'Order items are required' });
     }
 
-    const normalizedPaymentMethod = String(paymentMethod || 'COD').toUpperCase();
-    const allowedPaymentMethods = ['COD', 'RAZORPAY'];
+    const normalizedPaymentMethod = String(paymentMethod || 'Razorpay').toUpperCase();
+    const allowedPaymentMethods = ['RAZORPAY'];
 
     if (!allowedPaymentMethods.includes(normalizedPaymentMethod)) {
       return res.status(400).json({ message: 'Invalid payment method' });
@@ -92,14 +91,14 @@ export const createOrder = async (req, res) => {
       total,
       status: 'Created',
       paymentStatus: 'Pending',
-      paymentMethod: normalizedPaymentMethod === 'COD' ? 'COD' : 'Razorpay',
+      paymentMethod: 'Razorpay',
     });
 
     await Payment.create({
       orderId: order._id,
       amount: total,
       status: 'Pending',
-      provider: normalizedPaymentMethod === 'COD' ? 'COD' : 'Razorpay',
+      provider: 'Razorpay',
     });
 
     if (req.user?._id) {
@@ -110,10 +109,6 @@ export const createOrder = async (req, res) => {
     }
 
     emitOrderUpdate(order);
-
-    if (normalizedPaymentMethod === 'COD') {
-      sendOrderInvoiceEmail(order._id);
-    }
 
     res.status(201).json(order);
 
@@ -169,12 +164,7 @@ export const trackGuestOrder = async (req, res) => {
 
 export const listAllOrders = async (req, res) => {
   try {
-    const orders = await Order.find({
-      $or: [
-        { paymentMethod: 'COD' },
-        { paymentStatus: 'Paid' },
-      ],
-    })
+    const orders = await Order.find({ paymentStatus: 'Paid' })
       .populate('userId', 'name email phone address')
       .populate('items.productId', 'title images brand')
       .populate('items.variantId', 'size color sku price')

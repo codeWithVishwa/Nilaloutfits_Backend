@@ -73,9 +73,7 @@ export const protectOptional = async (req, res, next) => {
     const user = await User.findById(decoded.id).select('-password');
 
     if (!user) {
-      req.user = null;
-      req.userPermissions = new Set();
-      return next();
+      return res.status(401).json({ message: 'Not authorized - User not found' });
     }
 
     const basePermissions = ROLE_PERMISSIONS[user.role] || [];
@@ -83,9 +81,13 @@ export const protectOptional = async (req, res, next) => {
     req.user = user;
     req.userPermissions = new Set([...basePermissions, ...extraPermissions]);
     return next();
-  } catch {
-    req.user = null;
-    req.userPermissions = new Set();
-    return next();
+  } catch (error) {
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ message: 'Not authorized - Invalid token' });
+    }
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Not authorized - Token expired' });
+    }
+    return res.status(401).json({ message: 'Not authorized' });
   }
 };

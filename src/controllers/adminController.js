@@ -16,7 +16,7 @@ export const getDashboardMetrics = async (req, res) => {
       {
         $match: {
           status: { $ne: 'Cancelled' },
-          $or: [{ paymentStatus: 'Paid' }, { paymentMethod: 'COD' }],
+          paymentStatus: 'Paid',
         },
       },
       { $group: { _id: null, total: { $sum: '$total' } } },
