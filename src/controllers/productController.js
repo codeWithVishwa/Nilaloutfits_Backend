@@ -121,10 +121,15 @@ export const listProducts = async (req, res) => {
       status 
     } = req.query;
 
-    // Build base filter - ALWAYS filter by Active status unless explicitly overridden
-    const filter = {
-      status: status || 'Active'
-    };
+    const normalizedStatus = typeof status === 'string' ? status.trim() : '';
+
+    // Public catalog defaults to active products. Admin can request status=all.
+    const filter = {};
+    if (!normalizedStatus) {
+      filter.status = 'Active';
+    } else if (normalizedStatus.toLowerCase() !== 'all') {
+      filter.status = normalizedStatus;
+    }
 
     // Add category filter only if provided and not empty
     if (categoryId && categoryId.trim()) {

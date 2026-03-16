@@ -12,6 +12,7 @@
     "create:verified-user": "node scripts/create-verified-user.js",
     "seed:orders-preview": "node scripts/seed-orders-preview.js",
     "seed:category-products": "node scripts/seed-category-products.js",
+    "seed:bulk-products": "node scripts/seed-bulk-products.js",
     "seed:kids-subcategories": "node scripts/seed-kids-subcategories.js",
     "migrate:subcategory-indexes": "node scripts/migrate-subcategory-indexes.js",
     "test": "echo \"Error: no test specified\" && exit 1"
