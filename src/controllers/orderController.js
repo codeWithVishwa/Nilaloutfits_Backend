@@ -13,8 +13,8 @@ const parsePositiveNumber = (value, fallback) => {
 };
 
 const SHIPPING_ENABLED = String(process.env.SHIPPING_ENABLED || 'true').toLowerCase() !== 'false';
-const SHIPPING_TAMIL_NADU_FEE = parsePositiveNumber(process.env.SHIPPING_TAMIL_NADU_FEE, 50);
-const SHIPPING_OTHER_STATE_FEE = parsePositiveNumber(process.env.SHIPPING_OTHER_STATE_FEE, 100);
+const SHIPPING_TAMIL_NADU_FEE = parsePositiveNumber(process.env.SHIPPING_TAMIL_NADU_FEE, 20);
+const SHIPPING_OTHER_STATE_FEE = parsePositiveNumber(process.env.SHIPPING_OTHER_STATE_FEE, 50);
 const normalizeStateName = (value) =>
   String(value || '')
     .trim()
