@@ -10,6 +10,7 @@
     "dev": "nodemon index.js",
     "start": "node index.js",
     "create:verified-user": "node scripts/create-verified-user.js",
+    "fix:user-indexes": "node scripts/fix-user-indexes.js",
     "seed:orders-preview": "node scripts/seed-orders-preview.js",
     "seed:category-products": "node scripts/seed-category-products.js",
     "seed:bulk-products": "node scripts/seed-bulk-products.js",

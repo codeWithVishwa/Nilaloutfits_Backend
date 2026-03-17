@@ -71,9 +71,13 @@ const resolveClientBaseUrl = () => {
   return fallbackUrl;
 };
 
-const sendVerificationEmail = async (user, rawToken) => {
+const buildVerificationUrl = (rawToken) => {
   const clientUrl = resolveClientBaseUrl();
-  const verifyUrl = `${clientUrl}/verify-email?token=${rawToken}`;
+  return `${clientUrl}/verify-email?token=${rawToken}`;
+};
+
+const sendVerificationEmail = async (user, rawToken) => {
+  const verifyUrl = buildVerificationUrl(rawToken);
 
   await sendEmail({
     to: user.email,
@@ -214,6 +218,10 @@ const sendResetEmail = async (user, rawToken) => {
   });
 };
 
+const logEmailFailure = (label, error) => {
+  console.error(`${label}:`, error?.message || error);
+};
+
 export const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -246,10 +254,19 @@ export const register = async (req, res) => {
       ),
     });
 
-    await sendVerificationEmail(user, rawToken);
+    let verificationEmailFailed = false;
+    try {
+      await sendVerificationEmail(user, rawToken);
+    } catch (error) {
+      verificationEmailFailed = true;
+      logEmailFailure("Verification email send failed during registration", error);
+    }
 
-    res.status(201).json({
-      message: "Registered successfully. Please verify your email.",
+    const responseBody = {
+      message: verificationEmailFailed
+        ? "Registered successfully, but we could not send the verification email right now. Please use resend verification shortly."
+        : "Registered successfully. Please verify your email.",
+      emailDeliveryFailed: verificationEmailFailed,
       user: {
         id: user._id,
         name: user.name,
@@ -257,8 +274,18 @@ export const register = async (req, res) => {
         role: user.role,
         isEmailVerified: user.isEmailVerified,
       },
-    });
+    };
+
+    res.status(201).json(responseBody);
   } catch (error) {
+    console.error('Register error:', error?.message || error);
+    if (error?.code === 11000) {
+      const duplicateField = Object.keys(error?.keyPattern || {})[0] || Object.keys(error?.keyValue || {})[0];
+      if (duplicateField === 'email') {
+        return res.status(409).json({ message: 'Email already in use' });
+      }
+      return res.status(409).json({ message: `Duplicate value for ${duplicateField || 'a unique field'}` });
+    }
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -577,7 +604,14 @@ export const resendVerification = async (req, res) => {
     );
     await user.save({ validateBeforeSave: false });
 
-    await sendVerificationEmail(user, rawToken);
+    try {
+      await sendVerificationEmail(user, rawToken);
+    } catch (error) {
+      logEmailFailure("Verification email resend failed", error);
+      return res
+        .status(503)
+        .json({ message: "Could not send verification email right now. Please try again shortly." });
+    }
 
     res
       .status(200)
