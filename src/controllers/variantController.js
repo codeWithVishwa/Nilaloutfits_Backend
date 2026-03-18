@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import Variant from '../models/Variant.js';
 import Product from '../models/Product.js';
 import { emitStockUpdate } from '../socket/index.js';
+import { syncAutoVariantForProduct } from '../utils/defaultVariant.js';
 
 export const createVariant = async (req, res) => {
   try {
@@ -101,6 +102,8 @@ export const resolveVariantForCheckout = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(productId)) {
       return res.status(400).json({ message: 'Invalid productId' });
     }
+
+    await syncAutoVariantForProduct(productId);
 
     const inStockVariant = await Variant.findOne({
       productId,

@@ -4,6 +4,7 @@ import Order from '../models/Order.js';
 import Subcategory from '../models/Subcategory.js';
 import { slugify } from '../utils/slug.js';
 import { getPagination } from '../utils/pagination.js';
+import { syncAutoVariantForProduct } from '../utils/defaultVariant.js';
 
 const generateUniqueSlug = async (title, excludeId) => {
   const base = slugify(title);
@@ -364,6 +365,7 @@ export const getProduct = async (req, res) => {
     const { id } = req.params;
     const product = await Product.findById(id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
+    await syncAutoVariantForProduct(product);
     const variants = await Variant.find({ productId: id });
     res.status(200).json({ product, variants });
   } catch (error) {
@@ -421,6 +423,7 @@ export const updateProduct = async (req, res) => {
 
     const product = await Product.findByIdAndUpdate(id, updates, { new: true });
     if (!product) return res.status(404).json({ message: 'Product not found' });
+    await syncAutoVariantForProduct(product);
     res.status(200).json(product);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });

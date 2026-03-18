@@ -29,6 +29,32 @@ const SHIPPING_TAMIL_NADU_STATE_ALIASES = String(
   .filter(Boolean);
 const ORDER_TAX_RATE = parsePositiveNumber(process.env.ORDER_TAX_RATE, 0);
 const ORDER_CURRENCY = 'INR';
+const REQUIRED_ADDRESS_FIELDS = ['name', 'phone', 'line1', 'city', 'state', 'postalCode', 'country'];
+const trimInputValue = (value) => (typeof value === 'string' ? value.trim() : value);
+const normalizePhoneNumber = (value) => {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.startsWith('91') && digits.length === 12) {
+    return digits.slice(2);
+  }
+  return digits;
+};
+const formatIndianPhoneNumber = (value) => {
+  const digits = normalizePhoneNumber(value);
+  return digits ? `+91 ${digits}` : '';
+};
+const normalizeOrderAddress = (address = {}) => ({
+  ...address,
+  name: trimInputValue(address.name) || '',
+  phone: formatIndianPhoneNumber(address.phone),
+  line1: trimInputValue(address.line1) || '',
+  line2: trimInputValue(address.line2) || '',
+  city: trimInputValue(address.city) || '',
+  state: trimInputValue(address.state) || '',
+  postalCode: trimInputValue(address.postalCode) || '',
+  country: trimInputValue(address.country) || '',
+});
+const getMissingRequiredAddressFields = (address = {}) =>
+  REQUIRED_ADDRESS_FIELDS.filter((field) => !trimInputValue(address[field]));
 
 const computeOrderAmounts = ({ subtotal = 0, address = {}, productShippingFee = 0 }) => {
   const normalizedSubtotal = toMoney(subtotal);
@@ -145,8 +171,9 @@ const prepareOrderItems = async (items = []) => {
 export const quoteOrderPricing = async (req, res) => {
   try {
     const { items = [], address = {} } = req.body || {};
+    const normalizedAddress = normalizeOrderAddress(address);
     const { subtotal, productShippingFee } = await prepareOrderItems(items);
-    const amounts = computeOrderAmounts({ subtotal, address, productShippingFee });
+    const amounts = computeOrderAmounts({ subtotal, address: normalizedAddress, productShippingFee });
 
     return res.status(200).json({
       ...amounts,
@@ -179,11 +206,16 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({ message: 'Shipping address is required' });
     }
 
-    const requiredAddressFields = ['name', 'phone', 'line1', 'city', 'state', 'postalCode', 'country'];
-    const missingFields = requiredAddressFields.filter((field) => !address[field]);
+    const normalizedAddress = normalizeOrderAddress(address);
+    const missingFields = getMissingRequiredAddressFields(normalizedAddress);
 
     if (missingFields.length > 0) {
       return res.status(400).json({ message: `Missing address fields: ${missingFields.join(', ')}` });
+    }
+
+    const normalizedPhone = normalizePhoneNumber(normalizedAddress.phone);
+    if (normalizedPhone.length !== 10) {
+      return res.status(400).json({ message: 'Valid 10-digit mobile number is required' });
     }
 
     if (isGuestCheckout) {
@@ -194,7 +226,7 @@ export const createOrder = async (req, res) => {
     }
 
     const { orderItems, subtotal, productShippingFee, variantMap, requestedQtyByVariant } = await prepareOrderItems(items);
-    const amounts = computeOrderAmounts({ subtotal, address, productShippingFee });
+    const amounts = computeOrderAmounts({ subtotal, address: normalizedAddress, productShippingFee });
 
     for (const [variantId, quantity] of requestedQtyByVariant.entries()) {
       const variant = variantMap.get(variantId);
@@ -210,12 +242,12 @@ export const createOrder = async (req, res) => {
       guestInfo: isGuestCheckout
         ? {
           email: String(guestEmail || '').trim().toLowerCase(),
-          name: address.name,
-          phone: address.phone,
+          name: normalizedAddress.name,
+          phone: normalizedAddress.phone,
         }
         : undefined,
       items: orderItems,
-      address,
+      address: normalizedAddress,
       subtotal: amounts.subtotal,
       shippingFee: amounts.shippingFee,
       tax: amounts.tax,

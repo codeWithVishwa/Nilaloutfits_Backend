@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import Cart from '../models/Cart.js';
 import Product from '../models/Product.js';
 import Variant from '../models/Variant.js';
+import { syncAutoVariantForProduct } from '../utils/defaultVariant.js';
 
 const getPopulatedCart = async (userId) => {
   return Cart.findOne({ userId })
@@ -31,6 +32,7 @@ export const addToCart = async (req, res) => {
 
     let resolvedVariantId = variantId;
     if (!resolvedVariantId) {
+      await syncAutoVariantForProduct(productId);
       const defaultVariant = await Variant.findOne({
         productId,
         availability: 'InStock',
