@@ -125,9 +125,15 @@ const prepareOrderItems = async (items = []) => {
   }
 
   const productIds = [...new Set(variants.map((variant) => String(variant.productId)))];
-  const products = await Product.find({ _id: { $in: productIds } }).select('_id shippingCost').lean();
-  const productShippingCostById = new Map(
-    products.map((product) => [String(product._id), parsePositiveNumber(product.shippingCost, 0)])
+  const products = await Product.find({ _id: { $in: productIds } }).select('_id shippingCost title').lean();
+  const productMetaById = new Map(
+    products.map((product) => [
+      String(product._id),
+      {
+        shippingCost: parsePositiveNumber(product.shippingCost, 0),
+        title: String(product.title || '').trim(),
+      },
+    ])
   );
 
   let subtotal = 0;
@@ -143,7 +149,8 @@ const prepareOrderItems = async (items = []) => {
 
     const unitPrice = Number(variant.price || 0);
     const productId = String(variant.productId);
-    const unitShippingCost = productShippingCostById.get(productId) || 0;
+    const productMeta = productMetaById.get(productId) || {};
+    const unitShippingCost = productMeta.shippingCost || 0;
     subtotal += unitPrice * quantity;
     // Product shipping is charged once per product in an order, not per quantity.
     if (!chargedProductIds.has(productId)) {
@@ -154,6 +161,8 @@ const prepareOrderItems = async (items = []) => {
     orderItems.push({
       productId: variant.productId,
       variantId: variant._id,
+      productTitleSnapshot: productMeta.title || undefined,
+      variantSkuSnapshot: String(variant.sku || '').trim() || undefined,
       quantity,
       priceSnapshot: unitPrice,
     });
