@@ -5,35 +5,29 @@ import Payment from '../models/Payment.js';
 import Variant from '../models/Variant.js';
 import { sendOrderInvoiceEmail } from '../utils/invoiceEmail.js';
 import { emitStockUpdate } from '../socket/index.js';
+import { buildVariantQuantityMapFromOrderItems, restoreVariantStock, syncProductStockFromVariants } from '../utils/stock.js';
 
 const restoreOrderStock = async (order) => {
   if (!order?.items?.length) return;
-
-  const variantIds = order.items.map((item) => item.variantId);
-  const variants = await Variant.find({ _id: { $in: variantIds } });
-
-  for (const item of order.items) {
-    const variant = variants.find((v) => v._id.toString() === item.variantId.toString());
-    if (!variant) continue;
-    variant.stock += item.quantity;
-    variant.availability = variant.stock > 0 ? 'InStock' : 'OutOfStock';
-    await variant.save();
-    emitStockUpdate(variant);
-  }
+  const variantQuantities = buildVariantQuantityMapFromOrderItems(order.items);
+  const { updatedVariants } = await restoreVariantStock(variantQuantities);
+  updatedVariants.forEach((variant) => emitStockUpdate(variant));
 };
 
 const reReserveOrderStock = async (order) => {
   if (!order?.items?.length) return { adjusted: false, shortages: [] };
 
-  const variantIds = order.items.map((item) => item.variantId);
+  const variantQuantities = buildVariantQuantityMapFromOrderItems(order.items);
+  const variantIds = [...variantQuantities.keys()];
   const variants = await Variant.find({ _id: { $in: variantIds } });
   const shortages = [];
+  const updatedVariants = [];
 
-  for (const item of order.items) {
-    const variant = variants.find((v) => v._id.toString() === item.variantId.toString());
+  for (const [variantId, quantity] of variantQuantities.entries()) {
+    const variant = variants.find((v) => v._id.toString() === variantId);
     if (!variant) continue;
 
-    const requested = Number(item.quantity || 0);
+    const requested = Number(quantity || 0);
     const available = Number(variant.stock || 0);
     const nextStock = Math.max(0, available - requested);
     if (available < requested) {
@@ -47,7 +41,12 @@ const reReserveOrderStock = async (order) => {
     variant.stock = nextStock;
     variant.availability = variant.stock > 0 ? 'InStock' : 'OutOfStock';
     await variant.save();
+    updatedVariants.push(variant);
     emitStockUpdate(variant);
+  }
+
+  if (updatedVariants.length) {
+    await syncProductStockFromVariants(updatedVariants.map((variant) => variant.productId));
   }
 
   return { adjusted: true, shortages };

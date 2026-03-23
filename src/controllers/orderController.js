@@ -5,6 +5,7 @@ import Product from '../models/Product.js';
 import Payment from '../models/Payment.js';
 import Cart from '../models/Cart.js';
 import { emitOrderUpdate, emitStockUpdate } from '../socket/index.js';
+import { reserveVariantStock, restoreVariantStock } from '../utils/stock.js';
 
 const toMoney = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const parsePositiveNumber = (value, fallback) => {
@@ -30,6 +31,12 @@ const SHIPPING_TAMIL_NADU_STATE_ALIASES = String(
 const ORDER_TAX_RATE = parsePositiveNumber(process.env.ORDER_TAX_RATE, 0);
 const ORDER_CURRENCY = 'INR';
 const REQUIRED_ADDRESS_FIELDS = ['name', 'phone', 'line1', 'city', 'state', 'postalCode', 'country'];
+const ORDER_REQUEST_ERRORS = new Set([
+  'Order items are required',
+  'Invalid order items',
+  'Invalid variants',
+  'Insufficient stock',
+]);
 const trimInputValue = (value) => (typeof value === 'string' ? value.trim() : value);
 const normalizePhoneNumber = (value) => {
   const digits = String(value || '').replace(/\D/g, '');
@@ -234,50 +241,56 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    const { orderItems, subtotal, productShippingFee, variantMap, requestedQtyByVariant } = await prepareOrderItems(items);
+    const { orderItems, subtotal, productShippingFee, requestedQtyByVariant } = await prepareOrderItems(items);
     const amounts = computeOrderAmounts({ subtotal, address: normalizedAddress, productShippingFee });
 
-    for (const [variantId, quantity] of requestedQtyByVariant.entries()) {
-      const variant = variantMap.get(variantId);
-      if (!variant) continue;
-      variant.stock = Number(variant.stock || 0) - quantity;
-      variant.availability = variant.stock > 0 ? 'InStock' : 'OutOfStock';
-      await variant.save();
-      emitStockUpdate(variant);
+    const stockReservation = await reserveVariantStock(requestedQtyByVariant);
+    let order = null;
+
+    try {
+      order = await Order.create({
+        userId: req.user?._id,
+        guestInfo: isGuestCheckout
+          ? {
+            email: String(guestEmail || '').trim().toLowerCase(),
+            name: normalizedAddress.name,
+            phone: normalizedAddress.phone,
+          }
+          : undefined,
+        items: orderItems,
+        address: normalizedAddress,
+        subtotal: amounts.subtotal,
+        shippingFee: amounts.shippingFee,
+        tax: amounts.tax,
+        total: amounts.total,
+        status: 'Created',
+        paymentStatus: 'Pending',
+        paymentMethod: 'Razorpay',
+      });
+
+      await Payment.create({
+        orderId: order._id,
+        amount: amounts.total,
+        status: 'Pending',
+        provider: 'Razorpay',
+      });
+    } catch (error) {
+      if (order?._id) {
+        await Order.findByIdAndDelete(order._id).catch(() => null);
+      }
+
+      const rollbackResult = await restoreVariantStock(stockReservation.adjustments).catch(() => null);
+      rollbackResult?.updatedVariants?.forEach((variant) => emitStockUpdate(variant));
+      throw error;
     }
 
-    const order = await Order.create({
-      userId: req.user?._id,
-      guestInfo: isGuestCheckout
-        ? {
-          email: String(guestEmail || '').trim().toLowerCase(),
-          name: normalizedAddress.name,
-          phone: normalizedAddress.phone,
-        }
-        : undefined,
-      items: orderItems,
-      address: normalizedAddress,
-      subtotal: amounts.subtotal,
-      shippingFee: amounts.shippingFee,
-      tax: amounts.tax,
-      total: amounts.total,
-      status: 'Created',
-      paymentStatus: 'Pending',
-      paymentMethod: 'Razorpay',
-    });
-
-    await Payment.create({
-      orderId: order._id,
-      amount: amounts.total,
-      status: 'Pending',
-      provider: 'Razorpay',
-    });
+    stockReservation.updatedVariants.forEach((variant) => emitStockUpdate(variant));
 
     if (req.user?._id) {
       await Cart.findOneAndUpdate(
         { userId: req.user._id },
         { $set: { items: [] } }
-      );
+      ).catch(() => null);
     }
 
     emitOrderUpdate(order);
@@ -285,7 +298,10 @@ export const createOrder = async (req, res) => {
     res.status(201).json(order);
 
   } catch (error) {
-    res.status(400).json({ message: error.message || 'Order creation failed' });
+    const statusCode = ORDER_REQUEST_ERRORS.has(error?.message) ? 400 : 500;
+    res.status(statusCode).json({
+      message: statusCode === 400 ? error.message : 'Order creation failed',
+    });
   }
 };
 
