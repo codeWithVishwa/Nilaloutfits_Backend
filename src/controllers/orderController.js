@@ -246,6 +246,22 @@ export const createOrder = async (req, res) => {
       emitStockUpdate(variant);
     }
 
+    const requestedQtyByProduct = new Map();
+    for (const item of orderItems) {
+      const productId = String(item.productId);
+      requestedQtyByProduct.set(productId, (requestedQtyByProduct.get(productId) || 0) + Number(item.quantity || 0));
+    }
+
+    const products = await Product.find({ _id: { $in: [...requestedQtyByProduct.keys()] } });
+    const productMap = new Map(products.map((product) => [String(product._id), product]));
+
+    for (const [productId, quantity] of requestedQtyByProduct.entries()) {
+      const product = productMap.get(productId);
+      if (!product) continue;
+      product.stock = Math.max(0, Number(product.stock || 0) - quantity);
+      await product.save();
+    }
+
     const order = await Order.create({
       userId: req.user?._id,
       guestInfo: isGuestCheckout

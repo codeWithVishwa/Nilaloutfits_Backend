@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import razorpay from '../config/razorpay.js';
 import Order from '../models/Order.js';
 import Payment from '../models/Payment.js';
+import Product from '../models/Product.js';
 import Variant from '../models/Variant.js';
 import { sendOrderInvoiceEmail } from '../utils/invoiceEmail.js';
 import { emitStockUpdate } from '../socket/index.js';
@@ -11,6 +12,9 @@ const restoreOrderStock = async (order) => {
 
   const variantIds = order.items.map((item) => item.variantId);
   const variants = await Variant.find({ _id: { $in: variantIds } });
+  const productIds = [...new Set(order.items.map((item) => String(item.productId)))];
+  const products = await Product.find({ _id: { $in: productIds } });
+  const productMap = new Map(products.map((product) => [String(product._id), product]));
 
   for (const item of order.items) {
     const variant = variants.find((v) => v._id.toString() === item.variantId.toString());
@@ -19,6 +23,12 @@ const restoreOrderStock = async (order) => {
     variant.availability = variant.stock > 0 ? 'InStock' : 'OutOfStock';
     await variant.save();
     emitStockUpdate(variant);
+
+    const product = productMap.get(String(item.productId));
+    if (product) {
+      product.stock = Number(product.stock || 0) + Number(item.quantity || 0);
+      await product.save();
+    }
   }
 };
 
@@ -27,6 +37,9 @@ const reReserveOrderStock = async (order) => {
 
   const variantIds = order.items.map((item) => item.variantId);
   const variants = await Variant.find({ _id: { $in: variantIds } });
+  const productIds = [...new Set(order.items.map((item) => String(item.productId)))];
+  const products = await Product.find({ _id: { $in: productIds } });
+  const productMap = new Map(products.map((product) => [String(product._id), product]));
   const shortages = [];
 
   for (const item of order.items) {
@@ -48,6 +61,14 @@ const reReserveOrderStock = async (order) => {
     variant.availability = variant.stock > 0 ? 'InStock' : 'OutOfStock';
     await variant.save();
     emitStockUpdate(variant);
+
+    const product = productMap.get(String(item.productId));
+    if (product) {
+      const currentProductStock = Number(product.stock || 0);
+      const requestedProductQty = Number(item.quantity || 0);
+      product.stock = Math.max(0, currentProductStock - requestedProductQty);
+      await product.save();
+    }
   }
 
   return { adjusted: true, shortages };
