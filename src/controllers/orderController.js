@@ -30,7 +30,7 @@ const SHIPPING_TAMIL_NADU_STATE_ALIASES = String(
   .filter(Boolean);
 const ORDER_TAX_RATE = parsePositiveNumber(process.env.ORDER_TAX_RATE, 0);
 const ORDER_CURRENCY = 'INR';
-const REQUIRED_ADDRESS_FIELDS = ['name', 'phone', 'line1', 'city', 'state', 'postalCode', 'country'];
+const REQUIRED_ADDRESS_FIELDS = ['name', 'phone', 'alternatePhone', 'line1', 'city', 'state', 'postalCode', 'country'];
 const ORDER_REQUEST_ERRORS = new Set([
   'Order items are required',
   'Invalid order items',
@@ -49,10 +49,12 @@ const formatIndianPhoneNumber = (value) => {
   const digits = normalizePhoneNumber(value);
   return digits ? `+91 ${digits}` : '';
 };
+const isValidIndianPhoneNumber = (value) => normalizePhoneNumber(value).length === 10;
 const normalizeOrderAddress = (address = {}) => ({
   ...address,
   name: trimInputValue(address.name) || '',
   phone: formatIndianPhoneNumber(address.phone),
+  alternatePhone: formatIndianPhoneNumber(address.alternatePhone),
   line1: trimInputValue(address.line1) || '',
   line2: trimInputValue(address.line2) || '',
   city: trimInputValue(address.city) || '',
@@ -229,9 +231,12 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({ message: `Missing address fields: ${missingFields.join(', ')}` });
     }
 
-    const normalizedPhone = normalizePhoneNumber(normalizedAddress.phone);
-    if (normalizedPhone.length !== 10) {
+    if (!isValidIndianPhoneNumber(normalizedAddress.phone)) {
       return res.status(400).json({ message: 'Valid 10-digit mobile number is required' });
+    }
+
+    if (!isValidIndianPhoneNumber(normalizedAddress.alternatePhone)) {
+      return res.status(400).json({ message: 'Alternate mobile number must be a valid 10-digit number' });
     }
 
     if (isGuestCheckout) {
@@ -255,6 +260,7 @@ export const createOrder = async (req, res) => {
             email: String(guestEmail || '').trim().toLowerCase(),
             name: normalizedAddress.name,
             phone: normalizedAddress.phone,
+            alternatePhone: normalizedAddress.alternatePhone,
           }
           : undefined,
         items: orderItems,

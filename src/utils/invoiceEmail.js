@@ -70,6 +70,7 @@ export const sendOrderInvoiceEmail = async (orderId) => {
     address.postalCode,
     address.country,
     address.phone || address.phoneNumber,
+    address.alternatePhone ? `Alt: ${address.alternatePhone}` : "",
   ].filter(Boolean);
 
   const html = `

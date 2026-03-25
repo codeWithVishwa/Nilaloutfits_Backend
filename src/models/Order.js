@@ -17,6 +17,7 @@ const addressSchema = new mongoose.Schema(
   {
     name: String,
     phone: String,
+    alternatePhone: String,
     line1: String,
     line2: String,
     city: String,
@@ -34,6 +35,7 @@ const orderSchema = new mongoose.Schema(
       email: { type: String, lowercase: true, trim: true },
       name: { type: String, trim: true },
       phone: { type: String, trim: true },
+      alternatePhone: { type: String, trim: true },
     },
     items: [orderItemSchema],
     address: addressSchema,
