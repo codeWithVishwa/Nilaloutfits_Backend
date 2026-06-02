@@ -34,6 +34,16 @@ const productSchema = new mongoose.Schema(
 productSchema.index({ title: 'text', description: 'text', tags: 'text' });
 productSchema.index({ categoryId: 1, subcategoryId: 1 });
 
+// Catalog list/sort patterns (see listProducts in productController.js).
+// Public catalog always filters by status: 'Active' and sorts by createdAt or price.
+productSchema.index({ status: 1, createdAt: -1 });
+productSchema.index({ status: 1, price: 1 });
+productSchema.index({ categoryId: 1, status: 1, createdAt: -1 });
+productSchema.index({ subcategoryId: 1, status: 1, createdAt: -1 });
+// Curated/featured lookups short-circuit before the generic sort.
+productSchema.index({ status: 1, featuredBestSelling: 1, updatedAt: -1 });
+productSchema.index({ status: 1, featuredRecent: 1, updatedAt: -1 });
+
 const Product = mongoose.model('Product', productSchema);
 
 export default Product;

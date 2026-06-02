@@ -16,6 +16,7 @@
     "seed:bulk-products": "node scripts/seed-bulk-products.js",
     "seed:kids-subcategories": "node scripts/seed-kids-subcategories.js",
     "migrate:subcategory-indexes": "node scripts/migrate-subcategory-indexes.js",
+    "sync:indexes": "node scripts/sync-indexes.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {

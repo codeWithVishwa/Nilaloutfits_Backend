@@ -93,6 +93,9 @@ export const createProduct = async (req, res) => {
       featuredVariantIds: Array.isArray(featuredVariantIds) ? featuredVariantIds : [],
     });
 
+    // Ensure the auto-variant exists from creation so reads can stay write-free.
+    await syncAutoVariantForProduct(product);
+
     res.status(201).json(product);
   } catch (error) {
     if (error?.code === 11000) {
@@ -363,10 +366,14 @@ export const listProducts = async (req, res) => {
 export const getProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const product = await Product.findById(id);
+    // Read-only path: auto-variant sync happens on write paths (create/update,
+    // cart-add, variant changes), so product detail reads stay side-effect free
+    // and cacheable. Run product + variant fetch in parallel.
+    const [product, variants] = await Promise.all([
+      Product.findById(id).lean(),
+      Variant.find({ productId: id }).lean(),
+    ]);
     if (!product) return res.status(404).json({ message: 'Product not found' });
-    await syncAutoVariantForProduct(product);
-    const variants = await Variant.find({ productId: id });
     res.status(200).json({ product, variants });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });

@@ -7,8 +7,11 @@ const connectDB = async () => {
   }
 
   try {
+    // Building indexes on every boot is wasteful (and can block) in production.
+    // Build them with `npm run sync:indexes` after deploy instead, and keep
+    // autoIndex on only in dev for convenience.
     await mongoose.connect(mongoUri, {
-      autoIndex: true,
+      autoIndex: process.env.NODE_ENV !== 'production',
     });
     console.log('MongoDB connected');
   } catch (error) {
