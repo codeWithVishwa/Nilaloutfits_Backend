@@ -127,6 +127,26 @@ const run = async () => {
     process.exit(1);
   }
 
+  // Fail fast on bad credentials/permissions before scanning the whole catalog.
+  if (!DRY_RUN) {
+    try {
+      await uploadBufferToR2(Buffer.from('ok'), 'preflight/__r2_write_check__.txt', {
+        contentType: 'text/plain',
+      });
+      console.log('R2 write check: OK');
+    } catch (error) {
+      console.error(`\nR2 write check FAILED: ${error.message}`);
+      console.error(
+        'The API token likely lacks "Object Read & Write" on this bucket, or the\n' +
+        'bucket/account is mismatched. Fix it in Cloudflare -> R2 -> Manage R2 API\n' +
+        'Tokens (create a token with Object Read & Write for the target bucket),\n' +
+        'update R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY in .env, then re-run.'
+      );
+      await mongoose.disconnect().catch(() => {});
+      process.exit(1);
+    }
+  }
+
   await connectDB();
   console.log(`Uploads dir: ${UPLOADS_DIR}`);
   console.log(DRY_RUN ? 'Mode: DRY RUN (no uploads, no DB writes)\n' : 'Mode: LIVE\n');
