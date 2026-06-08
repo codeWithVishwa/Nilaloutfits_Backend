@@ -5,6 +5,46 @@ import Subcategory from '../models/Subcategory.js';
 import { slugify } from '../utils/slug.js';
 import { getPagination } from '../utils/pagination.js';
 import { syncAutoVariantForProduct } from '../utils/defaultVariant.js';
+import { getCached, setCached, clearCached } from '../utils/cache.js';
+
+// Best-selling ranking is identical for every visitor and only shifts as new
+// paid orders arrive, so it is cached instead of re-aggregated on each request.
+const BEST_SELLING_CACHE_KEY = 'bestSelling:rankedIds';
+const BEST_SELLING_TTL_MS = 5 * 60 * 1000;
+
+export const invalidateBestSellingCache = () => clearCached(BEST_SELLING_CACHE_KEY);
+
+const getBestSellingRankedIds = async () => {
+  const cached = getCached(BEST_SELLING_CACHE_KEY);
+  if (cached) return cached;
+
+  const topSelling = await Order.aggregate([
+    { $match: { paymentStatus: 'Paid' } },
+    { $unwind: '$items' },
+    {
+      $group: {
+        _id: '$items.productId',
+        sold: { $sum: '$items.quantity' },
+      },
+    },
+    { $sort: { sold: -1 } },
+    { $limit: 500 }, // Reasonable cap for performance.
+  ]);
+
+  const rankedIds = topSelling.map((item) => item._id);
+  return setCached(BEST_SELLING_CACHE_KEY, rankedIds, BEST_SELLING_TTL_MS);
+};
+
+// Public catalog responses are identical across visitors and change slowly, so
+// allow a short shared/browser cache (and CDN, if added later). Admin views that
+// request status=all must never be cached.
+const setPublicCatalogCache = (res, { maxAge = 60, swr = 120 } = {}) => {
+  res.set('Cache-Control', `public, max-age=${maxAge}, stale-while-revalidate=${swr}`);
+};
+
+const setNoStore = (res) => {
+  res.set('Cache-Control', 'no-store');
+};
 
 const generateUniqueSlug = async (title, excludeId) => {
   const base = slugify(title);
@@ -127,6 +167,13 @@ export const listProducts = async (req, res) => {
 
     const normalizedStatus = typeof status === 'string' ? status.trim() : '';
 
+    // Admin (status=all) views must always be fresh; public catalog can be cached.
+    if (normalizedStatus.toLowerCase() === 'all') {
+      setNoStore(res);
+    } else {
+      setPublicCatalogCache(res);
+    }
+
     // Public catalog defaults to active products. Admin can request status=all.
     const filter = {};
     if (!normalizedStatus) {
@@ -241,22 +288,9 @@ export const listProducts = async (req, res) => {
         });
       }
 
-      // Fallback to actual sales data
-      const topSelling = await Order.aggregate([
-        { $match: { paymentStatus: 'Paid' } },
-        { $unwind: '$items' },
-        {
-          $group: {
-            _id: '$items.productId',
-            sold: { $sum: '$items.quantity' },
-          },
-        },
-        { $sort: { sold: -1 } },
-        { $limit: 500 }, // Reasonable limit for performance
-      ]);
+      // Fallback to actual sales data (cached ranking, refreshed every few mins).
+      const rankedIds = await getBestSellingRankedIds();
 
-      const rankedIds = topSelling.map((item) => item._id);
-      
       if (rankedIds.length === 0) {
         // No sales data - fallback to recent products
         const [products, total] = await Promise.all([
@@ -283,9 +317,10 @@ export const listProducts = async (req, res) => {
         _id: { $in: rankedIds },
       }).lean();
 
-      // Sort products by sales rank
+      // Sort products by sales rank (Map lookup instead of O(n*m) find).
+      const productById = new Map(products.map((p) => [p._id.toString(), p]));
       const rankedProducts = rankedIds
-        .map((id) => products.find((p) => p._id.toString() === id.toString()))
+        .map((id) => productById.get(id.toString()))
         .filter(Boolean);
 
       // Apply pagination to ranked results
@@ -356,7 +391,8 @@ export const listProducts = async (req, res) => {
     });
   } catch (error) {
     console.error('List products error:', error);
-    res.status(500).json({ 
+    setNoStore(res); // Never cache an error response.
+    res.status(500).json({
       message: 'Server error',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -374,6 +410,7 @@ export const getProduct = async (req, res) => {
       Variant.find({ productId: id }).lean(),
     ]);
     if (!product) return res.status(404).json({ message: 'Product not found' });
+    setPublicCatalogCache(res);
     res.status(200).json({ product, variants });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });

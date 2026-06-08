@@ -89,6 +89,8 @@ export const listSubcategories = async (req, res) => {
     }
 
     const items = await Subcategory.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit);
+    // Subcategories change rarely and don't vary by user; cache the public listing.
+    res.set('Cache-Control', 'public, max-age=120, stale-while-revalidate=300');
     res.status(200).json(items);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });

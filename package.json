@@ -17,9 +17,11 @@
     "seed:kids-subcategories": "node scripts/seed-kids-subcategories.js",
     "migrate:subcategory-indexes": "node scripts/migrate-subcategory-indexes.js",
     "sync:indexes": "node scripts/sync-indexes.js",
+    "migrate:images-r2": "node scripts/migrate-images-to-r2.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1058.0",
     "bcryptjs": "^3.0.2",
     "cloudinary": "^1.41.0",
     "compression": "^1.7.4",
@@ -39,6 +41,7 @@
     "nodemailer": "^6.10.1",
     "path": "^0.12.7",
     "razorpay": "^2.9.6",
+    "sharp": "^0.34.5",
     "socket.io": "^4.8.1",
     "uuid": "^11.1.0"
   },

@@ -316,7 +316,7 @@ export const listOrders = async (req, res) => {
   try {
     const orders = await Order.find({ userId: req.user._id })
       .populate('userId', 'name email phone address')
-      .populate('items.productId', 'title images brand')
+      .populate('items.productId', 'title images brand categoryId')
       .populate('items.variantId', 'size color sku price')
       .sort({ createdAt: -1 });
     res.status(200).json(orders);
@@ -342,7 +342,7 @@ export const trackGuestOrder = async (req, res) => {
       _id: orderId,
       'guestInfo.email': normalizedEmail,
     })
-      .populate('items.productId', 'title images brand')
+      .populate('items.productId', 'title images brand categoryId')
       .populate('items.variantId', 'size color sku price')
       .select('-guestInfo');
 
@@ -360,7 +360,7 @@ export const listAllOrders = async (req, res) => {
   try {
     const orders = await Order.find({ paymentStatus: 'Paid' })
       .populate('userId', 'name email phone address')
-      .populate('items.productId', 'title images brand')
+      .populate('items.productId', 'title images brand categoryId')
       .populate('items.variantId', 'size color sku price')
       .sort({ createdAt: -1 });
     res.status(200).json(orders);

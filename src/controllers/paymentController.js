@@ -6,6 +6,7 @@ import Variant from '../models/Variant.js';
 import { sendOrderInvoiceEmail } from '../utils/invoiceEmail.js';
 import { emitStockUpdate } from '../socket/index.js';
 import { buildVariantQuantityMapFromOrderItems, restoreVariantStock, syncProductStockFromVariants } from '../utils/stock.js';
+import { invalidateBestSellingCache } from './productController.js';
 
 const restoreOrderStock = async (order) => {
   if (!order?.items?.length) return;
@@ -111,6 +112,9 @@ const markOrderAsPaid = async ({ payment, order, razorpayPaymentId, razorpaySign
       paymentStatus: 'Paid',
       status: 'Paid',
     });
+    // A new paid order changes the best-selling ranking; drop the cached version
+    // so the next catalog request reflects the sale immediately.
+    invalidateBestSellingCache();
   }
 
   return true;

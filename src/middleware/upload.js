@@ -1,15 +1,18 @@
 import multer from 'multer';
-import path from 'path';
 
-const diskStorage = multer.diskStorage({
-  destination: 'uploads/',
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname) || '';
-    const safeName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
-    cb(null, safeName);
+// Images are buffered in memory so they can be optimized (resized + WebP) and
+// streamed straight to Cloudflare R2 — no local disk writes. Cap the upload size
+// and accept images only.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB raw upload ceiling
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype?.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image uploads are allowed'));
+    }
   },
 });
-
-const upload = multer({ storage: diskStorage });
 
 export default upload;

@@ -1,22 +1,6 @@
-const buildOrigin = (req) => {
-  const publicAppUrl = String(process.env.PUBLIC_APP_URL || '').trim();
-  if (publicAppUrl) {
-    return publicAppUrl.replace(/\/+$/, '');
-  }
-
-  const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
-    .split(',')[0]
-    .trim();
-  const proto = forwardedProto || req.protocol || 'http';
-  const host = req.get('host');
-
-  const normalizedProto =
-    proto === 'http' && /(?:^|\.)nilaloutfits\.com$/i.test(host || '')
-      ? 'https'
-      : proto;
-
-  return `${normalizedProto}://${host}`;
-};
+import { isR2Configured } from '../config/r2.js';
+import { optimizeImageBuffer } from '../utils/imageOptimize.js';
+import { uploadBufferToR2, buildProductImageKey } from '../utils/r2Upload.js';
 
 export const uploadMedia = async (req, res) => {
   try {
@@ -24,11 +8,21 @@ export const uploadMedia = async (req, res) => {
       return res.status(400).json({ message: 'File is required' });
     }
 
-    const rawPath = req.file.path || '';
-    const normalizedPath = rawPath.replace(/\\/g, '/');
-    const url = `${buildOrigin(req)}/${normalizedPath}`;
+    if (!isR2Configured()) {
+      return res.status(503).json({
+        message: 'Image storage is not configured. Set the R2_* environment variables.',
+      });
+    }
+
+    // Optimize (resize + WebP) before storing so every uploaded image is small
+    // and consistently formatted, then push straight to R2 and return its URL.
+    const optimized = await optimizeImageBuffer(req.file.buffer);
+    const key = buildProductImageKey();
+    const url = await uploadBufferToR2(optimized, key);
+
     res.status(200).json({ url });
   } catch (error) {
+    console.error('Media upload error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
