@@ -10,9 +10,33 @@ const getPopulatedCart = async (userId) => {
     .populate('items.variantId', 'size color sku price stock');
 };
 
+// Returns the populated cart with orphaned items removed. An item is orphaned
+// when its product or variant has been deleted (e.g. admin removed the product),
+// which makes the populated ref null. Such items can't be priced or removed by
+// the client, so we prune them from storage and return a clean cart. Pruning
+// only runs when an orphan is actually present, so the common path stays cheap.
+const getCleanCart = async (userId) => {
+  const cart = await getPopulatedCart(userId);
+  if (!cart || !cart.items.length) return cart;
+
+  const hasOrphan = cart.items.some((item) => !item.productId || !item.variantId);
+  if (!hasOrphan) return cart;
+
+  const rawCart = await Cart.findOne({ userId });
+  if (rawCart) {
+    // Populated items align by index with the stored items array.
+    rawCart.items = rawCart.items.filter((_, idx) => {
+      const populated = cart.items[idx];
+      return populated && populated.productId && populated.variantId;
+    });
+    await rawCart.save();
+  }
+  return getPopulatedCart(userId);
+};
+
 export const getCart = async (req, res) => {
   try {
-    const cart = await getPopulatedCart(req.user._id);
+    const cart = await getCleanCart(req.user._id);
     res.status(200).json(cart || { userId: req.user._id, items: [] });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -145,7 +169,7 @@ export const addToCart = async (req, res) => {
       );
     }
 
-    cart = await getPopulatedCart(req.user._id);
+    cart = await getCleanCart(req.user._id);
     res.status(200).json(cart);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -169,7 +193,7 @@ export const updateCartItem = async (req, res) => {
         { $pull: { items: { variantId } } },
         { new: true }
       );
-      const cart = await getPopulatedCart(req.user._id);
+      const cart = await getCleanCart(req.user._id);
       return res.status(200).json(cart || { userId: req.user._id, items: [] });
     }
 
@@ -187,7 +211,7 @@ export const updateCartItem = async (req, res) => {
       { $set: { 'items.$.quantity': quantity, 'items.$.priceSnapshot': variant.price } },
       { new: true }
     );
-    const cart = await getPopulatedCart(req.user._id);
+    const cart = await getCleanCart(req.user._id);
     res.status(200).json(cart || { userId: req.user._id, items: [] });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -205,7 +229,7 @@ export const removeCartItem = async (req, res) => {
       { $pull: { items: { variantId } } },
       { new: true }
     );
-    const cart = await getPopulatedCart(req.user._id);
+    const cart = await getCleanCart(req.user._id);
     res.status(200).json(cart || { userId: req.user._id, items: [] });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });

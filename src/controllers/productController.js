@@ -2,6 +2,8 @@ import Product from '../models/Product.js';
 import Variant from '../models/Variant.js';
 import Order from '../models/Order.js';
 import Subcategory from '../models/Subcategory.js';
+import Cart from '../models/Cart.js';
+import Wishlist from '../models/Wishlist.js';
 import { slugify } from '../utils/slug.js';
 import { getPagination } from '../utils/pagination.js';
 import { syncAutoVariantForProduct } from '../utils/defaultVariant.js';
@@ -479,7 +481,13 @@ export const deleteProduct = async (req, res) => {
     const { id } = req.params;
     const product = await Product.findByIdAndDelete(id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
-    await Variant.deleteMany({ productId: id });
+    // Remove the product's variants and pull it from every cart/wishlist so no
+    // customer is left with an unremovable orphaned line item.
+    await Promise.all([
+      Variant.deleteMany({ productId: id }),
+      Cart.updateMany({ 'items.productId': id }, { $pull: { items: { productId: id } } }),
+      Wishlist.updateMany({ 'items.productId': id }, { $pull: { items: { productId: id } } }),
+    ]);
     res.status(200).json({ message: 'Product deleted' });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
