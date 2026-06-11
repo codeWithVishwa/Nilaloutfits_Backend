@@ -3,6 +3,13 @@ import Product from '../models/Product.js';
 import User from '../models/User.js';
 import Payment from '../models/Payment.js';
 import Variant from '../models/Variant.js';
+import { getOnlineStats } from '../middleware/presence.js';
+
+// Live presence is sensitive operational data; always serve it fresh.
+export const getOnlineUsers = (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.status(200).json(getOnlineStats());
+};
 
 export const getDashboardMetrics = async (req, res) => {
   try {

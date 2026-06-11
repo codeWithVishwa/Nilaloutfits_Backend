@@ -12,6 +12,10 @@ import { Server } from 'socket.io';
 
 import connectDB from './src/config/db.js';
 import { initSocket } from './src/socket/index.js';
+import { presenceTracker } from './src/middleware/presence.js';
+import { ipBlockGuard, loadBlockedIpCache } from './src/middleware/ipBlock.js';
+import { trafficTracker } from './src/middleware/systemMonitor.js';
+import systemRoutes from './src/routes/systemRoutes.js';
 
 import authRoutes from './src/routes/authRoutes.js';
 import categoryRoutes from './src/routes/categoryRoutes.js';
@@ -54,6 +58,9 @@ app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY));
 /* ---------------- BASIC HARDENING ---------------- */
 
 app.disable('x-powered-by');
+
+// Blocked IPs are rejected before anything else runs (parsers, limiters, routes).
+app.use(ipBlockGuard);
 
 app.use(
   helmet({
@@ -135,6 +142,12 @@ const globalLimiter = rateLimit({
 
 app.use('/api', globalLimiter);
 
+// Track client IP activity for the admin online-users metric (O(1) per request).
+app.use('/api', presenceTracker);
+
+// Per-minute traffic buckets + status counts for the admin system monitor.
+app.use('/api', trafficTracker);
+
 const authSensitiveLimiter = rateLimit({
   windowMs: Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS || 10 * 60 * 1000),
   max: Number(process.env.AUTH_RATE_LIMIT_MAX || (isProduction ? 40 : 200)),
@@ -197,6 +210,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/blogs', blogRoutes);
+app.use('/api/admin/system', systemRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/contact', contactRoutes);
@@ -220,6 +234,11 @@ app.use((err, req, res, next) => {
 const start = async () => {
   try {
     await connectDB();
+
+    const blockedCount = await loadBlockedIpCache();
+    if (blockedCount > 0) {
+      console.log(`IP blocklist loaded: ${blockedCount} blocked IP(s)`);
+    }
 
     const server = http.createServer(app);
 
