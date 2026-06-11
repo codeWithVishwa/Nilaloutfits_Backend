@@ -22,9 +22,12 @@ const systemLimiter = rateLimit({
   message: { message: 'Too many system-monitor requests. Slow down.' },
 });
 
-// Everything here requires an admin JWT *and* the super-admin credentials from
-// .env (sent base64-encoded via the x-super-auth header).
-router.use(systemLimiter, protect, authorizeRole('admin'), superAdminGuard);
+// Order matters for stealth: the super-admin guard runs FIRST and answers 404
+// to anyone without the exact env credentials (and allowed IP), so the routes
+// are indistinguishable from non-existent ones. Only callers that clear that bar
+// reach the admin-JWT checks. Defense in depth: rate limit -> hidden guard ->
+// admin JWT -> admin role.
+router.use(systemLimiter, superAdminGuard, protect, authorizeRole('admin'));
 
 router.get('/health', getSystemHealth);
 router.get('/traffic', getSystemTraffic);
