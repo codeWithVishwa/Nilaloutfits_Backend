@@ -9,8 +9,11 @@ import {
   removeBlockedIpFromCache,
   getBlockedIpCount,
 } from '../middleware/ipBlock.js';
-import { getTrafficStats, getEventLoopLagMs } from '../middleware/systemMonitor.js';
+import { getTrafficStats, getEventLoopLagMs, getApiResponseStats } from '../middleware/systemMonitor.js';
 import { getOnlineStats } from '../middleware/presence.js';
+import { getCpuStats, getMemoryStats, getDiskStats } from '../utils/systemResources.js';
+import { getDbQueryStats } from '../utils/dbStats.js';
+import { getCloudflareCacheStats } from '../services/cloudflare.js';
 
 const MONGO_STATES = ['disconnected', 'connected', 'connecting', 'disconnecting'];
 
@@ -22,12 +25,16 @@ export const getSystemHealth = async (req, res) => {
   try {
     let mongoPingMs = null;
     let mongoOk = false;
-    if (mongoose.connection.readyState === 1) {
-      const start = performance.now();
-      await mongoose.connection.db.admin().command({ ping: 1 });
-      mongoPingMs = Number((performance.now() - start).toFixed(1));
-      mongoOk = true;
-    }
+    const pingMongo = (async () => {
+      if (mongoose.connection.readyState === 1) {
+        const start = performance.now();
+        await mongoose.connection.db.admin().command({ ping: 1 });
+        mongoPingMs = Number((performance.now() - start).toFixed(1));
+        mongoOk = true;
+      }
+    })();
+
+    const [, disk] = await Promise.all([pingMongo, getDiskStats()]);
 
     const memory = process.memoryUsage();
     res.status(200).json({
@@ -35,14 +42,20 @@ export const getSystemHealth = async (req, res) => {
       serverTime: new Date().toISOString(),
       uptimeSeconds: Math.round(process.uptime()),
       eventLoopLagMs: getEventLoopLagMs(),
-      memory: {
+      cpu: getCpuStats(),
+      ram: getMemoryStats(),
+      disk,
+      process: {
         rssMb: Number((memory.rss / 1024 / 1024).toFixed(1)),
         heapUsedMb: Number((memory.heapUsed / 1024 / 1024).toFixed(1)),
       },
       mongo: {
         state: MONGO_STATES[mongoose.connection.readyState] || 'unknown',
         pingMs: mongoPingMs,
+        query: getDbQueryStats(),
       },
+      apiResponse: getApiResponseStats(),
+      cloudflare: getCloudflareCacheStats(),
     });
   } catch (error) {
     console.error('System health error:', error);

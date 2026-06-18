@@ -1,8 +1,13 @@
 // Lightweight in-process traffic + health sampling for the admin system monitor.
 // Everything here is O(1) per request and bounded in memory.
 
+import { createLatencyTracker } from '../utils/latency.js';
+
 const BUCKET_COUNT = 15; // keep the last 15 one-minute buckets
 const MAX_TRACKED_PATHS = 300;
+
+// Server-side processing time per API request (avg / p95 / slow count).
+const responseLatency = createLatencyTracker({ sampleSize: 500, slowMs: 500 });
 
 const minuteBuckets = new Map(); // minuteKey -> { total, s2xx, s3xx, s4xx, s5xx }
 const pathCounts = new Map(); // normalized path -> count (since boot)
@@ -28,8 +33,10 @@ const normalizePath = (path) =>
     .slice(0, 120);
 
 export const trafficTracker = (req, res, next) => {
+  const startedAt = process.hrtime.bigint();
   res.on('finish', () => {
     totalRequests += 1;
+    responseLatency.record(Number(process.hrtime.bigint() - startedAt) / 1e6);
 
     const key = currentMinuteKey();
     let bucket = minuteBuckets.get(key);
@@ -95,3 +102,5 @@ export const getTrafficStats = () => {
 };
 
 export const getEventLoopLagMs = () => eventLoopLagMs;
+
+export const getApiResponseStats = () => responseLatency.stats();
