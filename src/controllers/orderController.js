@@ -13,22 +13,27 @@ const parsePositiveNumber = (value, fallback) => {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 };
 
-const SHIPPING_ENABLED = String(process.env.SHIPPING_ENABLED || 'true').toLowerCase() !== 'false';
-const SHIPPING_TAMIL_NADU_FEE = parsePositiveNumber(process.env.SHIPPING_TAMIL_NADU_FEE, 20);
-const SHIPPING_OTHER_STATE_FEE = parsePositiveNumber(process.env.SHIPPING_OTHER_STATE_FEE, 50);
 const normalizeStateName = (value) =>
   String(value || '')
     .trim()
     .toLowerCase()
     .replace(/\./g, '')
     .replace(/\s+/g, ' ');
-const SHIPPING_TAMIL_NADU_STATE_ALIASES = String(
-  process.env.SHIPPING_TAMIL_NADU_STATE_ALIASES || 'tamil nadu,tamilnadu,tn'
-)
-  .split(',')
-  .map((stateName) => normalizeStateName(stateName))
-  .filter(Boolean);
-const ORDER_TAX_RATE = parsePositiveNumber(process.env.ORDER_TAX_RATE, 0);
+
+// Read shipping/tax settings from env at call time (not module-load time). In
+// index.js dotenv.config() runs after this file is imported, so reading these as
+// top-level constants would capture undefined and always use the defaults,
+// ignoring the .env values.
+const getShippingSettings = () => ({
+  enabled: String(process.env.SHIPPING_ENABLED || 'true').toLowerCase() !== 'false',
+  tamilNaduFee: parsePositiveNumber(process.env.SHIPPING_TAMIL_NADU_FEE, 20),
+  otherStateFee: parsePositiveNumber(process.env.SHIPPING_OTHER_STATE_FEE, 50),
+  tamilNaduAliases: String(process.env.SHIPPING_TAMIL_NADU_STATE_ALIASES || 'tamil nadu,tamilnadu,tn')
+    .split(',')
+    .map((stateName) => normalizeStateName(stateName))
+    .filter(Boolean),
+  taxRate: parsePositiveNumber(process.env.ORDER_TAX_RATE, 0),
+});
 const ORDER_CURRENCY = 'INR';
 const REQUIRED_ADDRESS_FIELDS = ['name', 'phone', 'alternatePhone', 'line1', 'city', 'state', 'postalCode', 'country'];
 const ORDER_REQUEST_ERRORS = new Set([
@@ -66,21 +71,22 @@ const getMissingRequiredAddressFields = (address = {}) =>
   REQUIRED_ADDRESS_FIELDS.filter((field) => !trimInputValue(address[field]));
 
 const computeOrderAmounts = ({ subtotal = 0, address = {}, productShippingFee = 0 }) => {
+  const settings = getShippingSettings();
   const normalizedSubtotal = toMoney(subtotal);
   const normalizedProductShippingFee = toMoney(productShippingFee);
 
   let baseShippingFee = 0;
   let shippingZone = 'disabled';
-  if (SHIPPING_ENABLED) {
+  if (settings.enabled) {
     const normalizedState = normalizeStateName(address?.state);
-    const isTamilNadu = SHIPPING_TAMIL_NADU_STATE_ALIASES.includes(normalizedState);
-    baseShippingFee = isTamilNadu ? SHIPPING_TAMIL_NADU_FEE : SHIPPING_OTHER_STATE_FEE;
+    const isTamilNadu = settings.tamilNaduAliases.includes(normalizedState);
+    baseShippingFee = isTamilNadu ? settings.tamilNaduFee : settings.otherStateFee;
     shippingZone = isTamilNadu ? 'tamil_nadu' : 'other_state';
   }
   baseShippingFee = toMoney(baseShippingFee);
   const shippingFee = toMoney(baseShippingFee + normalizedProductShippingFee);
 
-  const tax = toMoney((normalizedSubtotal * ORDER_TAX_RATE) / 100);
+  const tax = toMoney((normalizedSubtotal * settings.taxRate) / 100);
   const total = toMoney(normalizedSubtotal + shippingFee + tax);
   const amountForFreeShipping = 0;
 
@@ -91,12 +97,12 @@ const computeOrderAmounts = ({ subtotal = 0, address = {}, productShippingFee = 
     total,
     currency: ORDER_CURRENCY,
     shippingConfig: {
-      enabled: SHIPPING_ENABLED,
+      enabled: settings.enabled,
       baseFee: baseShippingFee,
       baseShippingFee,
       productShippingFee: normalizedProductShippingFee,
-      tamilNaduFee: toMoney(SHIPPING_TAMIL_NADU_FEE),
-      otherStateFee: toMoney(SHIPPING_OTHER_STATE_FEE),
+      tamilNaduFee: toMoney(settings.tamilNaduFee),
+      otherStateFee: toMoney(settings.otherStateFee),
       shippingZone,
       freeThreshold: 0,
       remoteSurcharge: 0,
