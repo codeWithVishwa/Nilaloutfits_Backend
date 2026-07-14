@@ -20,6 +20,7 @@
     "migrate:images-r2": "node scripts/migrate-images-to-r2.js",
     "loadtest:mongo": "node scripts/loadtest-mongo.js",
     "loadtest:http": "node scripts/loadtest-http.js",
+    "rename:sarees": "node scripts/rename-to-sarees.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {

@@ -35,9 +35,10 @@ export const listCategories = async (req, res) => {
     const includeInactive = String(req.query.includeInactive || '').toLowerCase() === 'true';
     const filter = includeInactive ? {} : { status: 'Active' };
     const items = await Category.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit);
-    // Categories change rarely; let the public listing sit in browser/CDN cache.
-    // Admin (includeInactive) views must stay fresh.
-    res.set('Cache-Control', includeInactive ? 'no-store' : 'public, max-age=120, stale-while-revalidate=300');
+    // Admin-editable structural data: serve fresh so newly added/edited categories
+    // appear immediately on the storefront. The frontend caches these in-memory
+    // for 5 min per session, so a browser/CDN cache here only adds staleness.
+    res.set('Cache-Control', 'no-store');
     res.status(200).json(items);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });

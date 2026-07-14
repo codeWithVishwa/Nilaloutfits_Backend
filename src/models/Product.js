@@ -3,6 +3,9 @@ import mongoose from 'mongoose';
 const productSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
+    // Preserves the product's original title when a bulk rename overwrites `title`
+    // with the subcategory name (see scripts/rename-to-sarees.js). Used to restore.
+    originalTitle: { type: String },
     slug: { type: String, unique: true, lowercase: true, trim: true },
     description: { type: String },
     categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },

@@ -89,8 +89,10 @@ export const listSubcategories = async (req, res) => {
     }
 
     const items = await Subcategory.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit);
-    // Subcategories change rarely and don't vary by user; cache the public listing.
-    res.set('Cache-Control', 'public, max-age=120, stale-while-revalidate=300');
+    // Admin-editable structural data: serve fresh so newly added/edited subcategories
+    // appear immediately on the storefront. The frontend caches these in-memory for
+    // 5 min per session, so a browser/CDN cache here only adds staleness.
+    res.set('Cache-Control', 'no-store');
     res.status(200).json(items);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });

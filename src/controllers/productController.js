@@ -155,16 +155,17 @@ export const listProducts = async (req, res) => {
     // Extract and sanitize query parameters
     const { limit, skip } = getPagination(req.query);
     const { 
-      q, 
-      categoryId, 
-      subcategoryId, 
+      q,
+      categoryId,
+      subcategoryId,
+      subcategoryIds,
       mainSubcategoryId,
-      size, 
-      priceMin, 
-      priceMax, 
-      availability, 
+      size,
+      priceMin,
+      priceMax,
+      availability,
       sort,
-      status 
+      status
     } = req.query;
 
     const normalizedStatus = typeof status === 'string' ? status.trim() : '';
@@ -212,6 +213,23 @@ export const listProducts = async (req, res) => {
       }
 
       filter.subcategoryId = { $in: relatedSubcategoryIds };
+    } else if (subcategoryIds && subcategoryIds.trim()) {
+      // Filter across an explicit set of subcategories (e.g. the Sarees page
+      // restricting the catalog to only saree-type subcategories).
+      const ids = subcategoryIds
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+      if (ids.length === 0) {
+        return res.status(200).json({
+          data: [],
+          totalItems: 0,
+          totalPages: 0,
+          currentPage: 1,
+          limit: limit || 12,
+        });
+      }
+      filter.subcategoryId = { $in: ids };
     }
 
     // Add text search only if provided and not empty
