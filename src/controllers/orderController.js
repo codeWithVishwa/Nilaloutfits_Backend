@@ -113,7 +113,7 @@ const computeOrderAmounts = ({ subtotal = 0, address = {}, productShippingFee = 
   };
 };
 
-const prepareOrderItems = async (items = []) => {
+const prepareOrderItems = async (items = [], { validateStock = true } = {}) => {
   if (!Array.isArray(items) || items.length === 0) {
     throw new Error('Order items are required');
   }
@@ -158,7 +158,13 @@ const prepareOrderItems = async (items = []) => {
 
   for (const [variantId, quantity] of requestedQtyByVariant.entries()) {
     const variant = variantMap.get(variantId);
-    if (!variant || Number(variant.stock || 0) < quantity) {
+    if (!variant) {
+      throw new Error('Invalid variants');
+    }
+    // Stock is only enforced at actual order placement (and again atomically in
+    // reserveVariantStock). A price/shipping quote must not fail on stock, or the
+    // frontend falls back to showing shipping as 0.
+    if (validateStock && Number(variant.stock || 0) < quantity) {
       throw new Error('Insufficient stock');
     }
 
@@ -196,7 +202,8 @@ export const quoteOrderPricing = async (req, res) => {
   try {
     const { items = [], address = {} } = req.body || {};
     const normalizedAddress = normalizeOrderAddress(address);
-    const { subtotal, productShippingFee } = await prepareOrderItems(items);
+    // A quote is an estimate — don't fail it on stock (that's checked at checkout).
+    const { subtotal, productShippingFee } = await prepareOrderItems(items, { validateStock: false });
     const amounts = computeOrderAmounts({ subtotal, address: normalizedAddress, productShippingFee });
 
     return res.status(200).json({
